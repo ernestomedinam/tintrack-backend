@@ -35,3 +35,12 @@ def generate_sitemap(app):
         <img src='https://ucarecdn.com/3a0e7d8b-25f3-4e2f-add2-016064b04075/rigobaby.jpg' />
         <h1>Hello Rigo!!</h1>
         This is your api home, remember to specify a real endpoint path like: <ul style="text-align: left;">"""+links_html+"</ul></div>"
+
+def validate_email_syntax(email):
+    email_regex = '^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$'
+    if (re.search(email_regex, email)):
+        # email syntax is valid
+        return True
+    else:
+        # email syntax is not valid
+        return False
