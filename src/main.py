@@ -10,15 +10,35 @@ from flask_cors import CORS
 from utils import APIException, generate_sitemap, validate_email_syntax
 from models import db, User
 from sqlalchemy.exc import IntegrityError
-#from models import Person
+from flask_jwt_extended import (
+    JWTManager, jwt_required, create_access_token, set_access_cookies,
+    get_jwt_identity
+)
+from blacklist_helpers import (
+    is_token_revoked, revoke_token, add_token_to_database
+)
 
 app = Flask(__name__)
 app.url_map.strict_slashes = False
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DB_CONNECTION_STRING')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# needed for encoding by flask_jwt_extended
+app.config['JWT_SECRET_KEY']=os.environ.get('JWT_SECRET_KEY')
+# needed for flask_jwT_extended blacklisting check
+app.config["JWT_BLACKLIST_ENABLED"] = True
+app.config["JWT_BLACKLIST_TOKEN_CHECKS"] = ["access"]
+# needed for flask_jwt_extended cookie jwt setting
+app.config["JWT_TOKEN_LOCATION"] = ["cookies"]
+app.config["JWT_ACCESS_COOKIE_PATH"] = ["/api/"]
+# should be true on production, demands https
+app.config["JWT_COOKIE_SECURE"] = False
+# needed for CSRF "protection"
+app.config["JWT_COOKIE_CSRF_PROTECT"] = True
+
 MIGRATE = Migrate(app, db)
 db.init_app(app)
 CORS(app)
+jwt = JWTManager(app)
 
 # Handle/serialize errors like a JSON object
 @app.errorhandler(APIException)
@@ -112,8 +132,23 @@ def handle_user_registration():
         headers
     )
 
+# jwt configs
+@jwt.user_claims_loader
+def add_claims_to_access_token(user):
+    return {
+        "name": user.name
+    }
+
+@jwt.user_identity_loader
+def user_identity_lookup(user):
+    return user.id
+
+@jwt.token_in_blacklist_loader
+def check_if_token_revoked(decoded_token):
+    return is_token_revoked(decoded_token)
+
 # user login endpoint
-@app.route("/auth/login", methods=["POST"])
+@app.route("/api/login", methods=["POST"])
 def handle_user_login():
     headers = {
             "Content-Type": "application/json"
@@ -124,7 +159,49 @@ def handle_user_login():
         login_input = request.json
         if set(("email", "password")).issubset(login_input):
             # user input has required keys
-            pass
+            if validate_email_syntax(login_input["email"]):
+                # email sintax is valid
+                requesting_user = User.query.filter_by(email=login_input["email"]).first()
+                if requesting_user:
+                    if requesting_user.check_password(login_input["password"]):
+                        print("user verified")
+                        access_token = create_access_token(requesting_user)
+                        add_token_to_database(access_token, app.config["JWT_IDENTITY_CLAIM"])
+                        # refresh_token = create_refresh_token(requesting_user)
+                        # add_token_to_database(refresh_token, app.config["JWT_IDENTITY_CLAIM"])
+                        response_body = {
+                            "result": "HTTP_200_0K. user is verified, JWT cookies shoulda been sent..."
+                        }
+                        status_code = 200
+                        auth_response = make_response(
+                            json.dumps(response_body),
+                            status_code,
+                            headers
+                        )
+                        set_access_cookies(auth_response, access_token)
+                        return auth_response
+                        
+                    else:
+                        status_code = 401
+                        response_body = {
+                            "result": "HTTP_401_UNAUTHORIZED. bad credentials..."
+                        }
+                else:
+                    status_code = 404
+                    response_body = {
+                        "result": "HTTP_401_UNAUTHORIZED. bad credentials..."
+                    }
+            else:
+                status_code = 400
+                response_body = {
+                    "result": "HTTP_400_BAD_REQUEST. invalid email syntax..."
+                }
+        else:
+            # user input is missing keys
+            status_code = 400
+            response_body = {
+                "result": "HTTP_400_BAD_REQUEST. a key is missing or was misspelled..."
+            }
     else:
         # no json content in request...
         status_code = 400
@@ -136,6 +213,31 @@ def handle_user_login():
         status_code,
         headers
     )
+
+# user who am i? endpoint
+@app.route("/api/me", methods=["GET"])
+@jwt_required
+def handle_me_query():
+    """ tells user (with token and csrf cookies) related identity
+        data and whether he may or not use those cookies to fetch
+        from API or login to refresh cookies instead """
+    headers = {
+        "Content-Type": "application/json"
+    }
+    current_user = get_jwt_identity()
+    response_body = {
+        "name": current_user.name,
+        "email": current_user.email
+        "is_authenticated": True
+    }
+    status_code = 200
+    return make_response(
+        json.dumps(response_body),
+        status_code,
+        headers
+    )
+
+    
 
 # this only runs if `$ python src/main.py` is executed
 if __name__ == '__main__':
