@@ -24,7 +24,7 @@ class User(db.Model):
     """ a tintrack user. each user has a personal salt to be mixed with
         password before hashing and storing."""
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(120), nullable=False)
+    name = db.Column(db.String(120), nullable=False, default="J Doe")
     email = db.Column(db.String(120), unique=True, nullable=False)
     date_of_birth = db.Column(db.Date, nullable=False)
     password_hash = db.Column(db.String(250), nullable=False, default="default")
@@ -33,7 +33,8 @@ class User(db.Model):
     habits = db.relationship("Habit", backref="user", lazy=True)
 
     def __init__(self, name, email):
-        self.name = string.capwords(name)
+        if name:
+            self.name = string.capwords(name)
         self.email = email.lower()
         self.user_salt = b64encode(os.urandom(32)).decode("utf-8")
 
