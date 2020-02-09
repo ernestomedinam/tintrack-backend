@@ -3,6 +3,7 @@ This module takes care of starting the API Server, Loading the DB and Adding the
 """
 import os
 import json
+import click
 from flask import Flask, request, jsonify, url_for, make_response
 from flask_migrate import Migrate
 from flask_swagger import swagger
@@ -12,10 +13,10 @@ from models import db, User
 from sqlalchemy.exc import IntegrityError
 from flask_jwt_extended import (
     JWTManager, jwt_required, create_access_token, set_access_cookies,
-    get_jwt_identity
+    get_jwt_identity, get_current_user
 )
 from blacklist_helpers import (
-    is_token_revoked, revoke_token, add_token_to_database
+    is_token_revoked, revoke_token, add_token_to_database, prune_database
 )
 
 app = Flask(__name__)
@@ -69,7 +70,6 @@ def handle_user_registration():
     if request.json:
         # there is json content in request
         registration_data = request.json
-        print(f"{registration_data}")
         # check all required fields are in request data
         if set(("name", "email", "password", "date_of_birth")).issubset(registration_data):
             # check email has valid syntax
@@ -147,6 +147,19 @@ def user_identity_lookup(user):
 def check_if_token_revoked(decoded_token):
     return is_token_revoked(decoded_token)
 
+@jwt.user_loader_callback_loader
+def user_loader_callback(identity):
+    user_from_id = User.query.filter_by(id=identity).first()
+    if not user_from_id:
+        return None
+    return user_from_id
+
+# prune database for expired tokens
+@app.cli.command("clean-expired-tokens")
+def clean_expired_tokens():
+    """ calls prune_database helper """
+    prune_database()
+
 # user login endpoint
 @app.route("/api/login", methods=["POST"])
 def handle_user_login():
@@ -164,7 +177,6 @@ def handle_user_login():
                 requesting_user = User.query.filter_by(email=login_input["email"]).first()
                 if requesting_user:
                     if requesting_user.check_password(login_input["password"]):
-                        print("user verified")
                         access_token = create_access_token(requesting_user)
                         add_token_to_database(access_token, app.config["JWT_IDENTITY_CLAIM"])
                         # refresh_token = create_refresh_token(requesting_user)
@@ -224,10 +236,10 @@ def handle_me_query():
     headers = {
         "Content-Type": "application/json"
     }
-    current_user = get_jwt_identity()
+    token_user = get_current_user()
     response_body = {
-        "name": current_user.name,
-        "email": current_user.email
+        "name": token_user.name,
+        "email": token_user.email,
         "is_authenticated": True
     }
     status_code = 200

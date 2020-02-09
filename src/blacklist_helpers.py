@@ -24,8 +24,9 @@ def is_token_revoked(decoded_token):
     """ this method does more than check revoked field for
         token, as we are supposed to treat as revoked any
         token that we haven't created (as in stored in db) """
-    jti = TokenBlacklist.query.filter_by(jti=jti).first()
-    if jti:
+    jti = decoded_token["jti"]
+    token = TokenBlacklist.query.filter_by(jti=jti).first()
+    if token:
         return token.revoked
     else:
         return True
