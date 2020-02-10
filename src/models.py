@@ -5,6 +5,7 @@ import enum
 import string
 import os
 import math
+import json
 from base64 import b64encode
 from dateutil.parser import parse
 from dateutil.relativedelta import relativedelta
@@ -99,6 +100,10 @@ class Activity(db.Model):
         self.personal_message = personal_message.strip()
         self.last_edited_at = datetime.now()
 
+    def update(self, name, personal_message):
+        self.name = name
+        self.personal_message = personal_message
+
 class Task(Activity):
     """ a task is a periodic activity that takes place in specific times
         and dates."""
@@ -150,10 +155,28 @@ class Habit(Activity):
             "targetValues": self.list_target_value_digits()
         }
 
+    def update(self, json_data):
+        name = json_data["name"].strip()
+        personal_message = json_data["personalMessage"].strip()
+        to_be_enforced = json.loads(json_data["toBeEnforced"])
+        icon_name = json_data["iconName"].strip()
+        target_period = json_data["targetPeriod"].strip()
+        target_value = json.loads(json_data["targetValue"])
+        self.to_be_enforced = to_be_enforced
+        if icon_name:
+            self.icon_name = icon_name
+        if target_period:
+            self.target_period = target_period
+        if target_value:
+            self.target_value = target_value
+        super().update(name, personal_message)
+        
     def list_target_value_digits(self):
         """ return a list with target value digits """
         value_string = str(self.target_value)
         digits_list = []
+        if len(value_string) == 1:
+            digits_list.append(0)
         for digit in value_string:
             digits_list.append(int(digit))
         return digits_list

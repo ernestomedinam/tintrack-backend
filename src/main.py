@@ -291,7 +291,7 @@ def handle_habits(habit_id=None):
             if (
                 new_habit_name and new_habit_message and
                 new_habit_period and 0 < new_habit_value < 100 and
-                new_habit_icon and new_habit_enforcement
+                new_habit_icon
             ):
                 # all values valid
                 new_habit = Habit(
@@ -303,7 +303,7 @@ def handle_habits(habit_id=None):
                 try:
                     db.session.commit()
                     status_code =  201
-                    result = f"guess we created this habit with id: {new_habit.id}"
+                    result = f"HTTP_201_CREATED. habit successfully created with id: {new_habit.id}"
                     response_body = {
                         "result": result
                     }
@@ -313,8 +313,6 @@ def handle_habits(habit_id=None):
                     response_body = {
                         "result": "something went wrong in db"
                     }
-                
-                
 
             else:
                 # some value is empty or invalid
@@ -331,10 +329,48 @@ def handle_habits(habit_id=None):
             }
 
     elif request.method == "PUT":
-        status_code = 501
-        response_body = { 
-            "result": "method not implemented yet"
-        }
+        # only allowed if habit_id is not None
+        if habit_id:
+            habit_to_edit = Habit.query.filter_by(id=habit_id).one_or_none()
+            if habit_to_edit:
+                # editing habit with input
+                habit_data = request.json
+                if set(("name", "personalMessage", "targetPeriod", "targetValue", "iconName", "toBeEnforced")).issubset(habit_data):
+                    # all data is present
+                    habit_to_edit.update(habit_data)
+                    try:
+                        db.session.commit()
+                        status_code = 200
+                        response_body = {
+                            "result": "HTTP_200_OK. habit successfully updated"
+                        }
+                    except IntegrityError:
+                        print("some error on db saving op")
+                        db.session.rollback()
+                        status_code = 400
+                        response_body = {
+                            "result": "HTTP_400_BAD_REQUEST. same user can't have two habits named the same!"
+                        }
+
+                else:
+                    status_code = 400
+                    response_body = {
+                        "result": "check inputs, some key is missing, this is PUT method, all keys required..."
+                    }
+
+            else:
+                # oh boy, no such habit...
+                status_code = 404
+                response_body = {
+                    "result": "HTTP_404_NOT_FOUND. oh boy, no such habit here..."
+                }
+        else:
+            # what? no habit_id shouldn't even get in here
+            status_code = 500
+            response_body = {
+                "result": "HTTP_666_WTF. this should not be able to happen..."
+            }
+            
     elif request.method == "DELETE":
         status_code = 501
         response_body = { 
