@@ -406,6 +406,38 @@ def handle_habits(habit_id=None):
         headers
     )
 
+# tasks endpoint
+@app.route("/api/tasks/", methods=["GET", "POST"])
+@app.route("/api/tasks/<task_id>", methods=["GET", "PUT", "DELETE"])
+@jwt_required
+def handle_tasks(task_id=None):
+    """ handle tasks for an authenticated user """
+    headers = {
+        "Content-Type": "application/json"
+    }
+    auth_user = get_current_user()
+    if request.method == "GET":
+        pass
+
+    elif request.method == "POST":
+        pass
+
+    elif request.method == "PUT":
+        pass
+
+    elif request.method == "DELETE":
+        pass
+
+    status_code = 501
+    response_body = {
+        "result": " HTTP_501_NOT_IMPLEMENTED. yet..."
+    }
+    return make_response (
+        json.dumps(response_body),
+        status_code,
+        headers
+    )
+
 
 # this only runs if `$ python src/main.py` is executed
 if __name__ == '__main__':
