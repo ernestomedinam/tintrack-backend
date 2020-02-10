@@ -9,7 +9,7 @@ from flask_migrate import Migrate
 from flask_swagger import swagger
 from flask_cors import CORS
 from utils import APIException, generate_sitemap, validate_email_syntax
-from models import db, User
+from models import db, User, Habit
 from sqlalchemy.exc import IntegrityError
 from flask_jwt_extended import (
     JWTManager, jwt_required, create_access_token, set_access_cookies,
@@ -265,19 +265,71 @@ def handle_habits(habit_id=None):
         # check if habit_id is not none
         if habit_id:
             # return specific habit details
-            pass
+            specific_habit = Habit.query.filter_by(id=habit_id).one_or_none()
+            response_body = specific_habit.serialize()
+            
         else:
             # return all user habits
-            pass
-        status_code = 501
-        response_body = { 
-            "result": "method not implemented yet"
-        }
+            user_habits = Habit.query.filter_by(user_id=auth_user.id).all()
+            response_body = []
+            for habit in user_habits:
+                response_body.append(habit.serialize())
+
+        status_code = 200
+
     elif request.method == "POST":
-        status_code = 501
-        response_body = { 
-            "result": "method not implemented yet"
-        }
+        # create habit, validate input...
+        new_habit_data = request.json
+        if set(("name", "personalMessage", "targetPeriod", "targetValue", "iconName", "toBeEnforced")).issubset(new_habit_data):
+            # all data is present
+            new_habit_name = new_habit_data["name"]
+            new_habit_message = new_habit_data["personalMessage"]
+            new_habit_period = new_habit_data["targetPeriod"]
+            new_habit_value = json.loads(new_habit_data["targetValue"])
+            new_habit_icon = new_habit_data["iconName"]
+            new_habit_enforcement = json.loads(new_habit_data["toBeEnforced"])
+            if (
+                new_habit_name and new_habit_message and
+                new_habit_period and 0 < new_habit_value < 100 and
+                new_habit_icon and new_habit_enforcement
+            ):
+                # all values valid
+                new_habit = Habit(
+                    new_habit_name, new_habit_message, new_habit_enforcement,
+                    new_habit_period, new_habit_value, new_habit_icon, auth_user.id
+                )
+                
+                db.session.add(new_habit)
+                try:
+                    db.session.commit()
+                    status_code =  201
+                    result = f"guess we created this habit with id: {new_habit.id}"
+                    response_body = {
+                        "result": result
+                    }
+                except:
+                    db.session.rollback()
+                    status_code = 500
+                    response_body = {
+                        "result": "something went wrong in db"
+                    }
+                
+                
+
+            else:
+                # some value is empty or invalid
+                status_code = 400
+                response_body = {
+                    "result": "HTTP_400_BAD_REQUEST. received invalid input values..."
+                }
+
+        else:
+            # some key is missing
+            status_code = 400
+            response_body = {
+                "result": "HTTP_400_BAD_REQUEST. some key is missing in request..."
+            }
+
     elif request.method == "PUT":
         status_code = 501
         response_body = { 
@@ -289,7 +341,6 @@ def handle_habits(habit_id=None):
             "result": "method not implemented yet"
         }
     
-    print(f"this is authenticated user: {auth_user.name}")
     return make_response (
         json.dumps(response_body),
         status_code,

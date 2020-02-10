@@ -4,6 +4,7 @@ from datetime import datetime
 import enum
 import string
 import os
+import math
 from base64 import b64encode
 from dateutil.parser import parse
 from dateutil.relativedelta import relativedelta
@@ -93,6 +94,11 @@ class Activity(db.Model):
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     last_edited_at = db.Column(db.DateTime, nullable=False)
 
+    def __init__(self, name, personal_message):
+        self.name = name.strip()
+        self.personal_message = personal_message.strip()
+        self.last_edited_at = datetime.now()
+
 class Task(Activity):
     """ a task is a periodic activity that takes place in specific times
         and dates."""
@@ -107,12 +113,10 @@ class Task(Activity):
     week_schedules = db.relationship("WeekSchedule", backref="task", lazy=True)
 
     def __init__(self, name, personal_message, duration_estimate, icon_name, user_id):
-        self.name = name.strip()
-        self.personal_message = personal_message.strip()
-        self.last_edited_at = datetime.now()
         self.duration_estimate = duration_estimate
         self.icon_name = icon_name
         self.user_id = user_id
+        super().__init__(name, personal_message)
 
 class Habit(Activity):
     __table_args__ = (
@@ -122,17 +126,37 @@ class Habit(Activity):
     to_be_enforced = db.Column(db.Boolean, nullable=False)
     target_period = db.Column(db.Enum(TargetPeriod), nullable=False)
     target_value = db.Column(db.Integer, nullable=False)
+    icon_name = db.Column(db.String(50), nullable=False, default="deafult-habit")
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     habit_counters = db.relationship("HabitCounter", backref="habit", lazy=True)
 
-    def __init__(self, name, personal_message, to_be_enforced, last_edited_at, target_period, target_value, user_id):
-        self.name = name.strip()
-        self.personal_message = personal_message.strip()
+    def __init__(self, name, personal_message, to_be_enforced, target_period, target_value, icon_name, user_id):
         self.to_be_enforced = to_be_enforced
-        self.last_edited_at = datetime.now()
         self.target_period = target_period
         self.target_value = target_value
+        self.icon_name = icon_name
         self.user_id = user_id
+        super().__init__(name, personal_message)
+
+    def serialize(self):
+        """ return dict for habit as required by front_end """
+        return {
+            "id": self.id,
+            "toBeEnforced": self.to_be_enforced,
+            "name": self.name,
+            "iconName": self.icon_name,
+            "personalMessage": self.personal_message,
+            "targetPeriod": self.target_period.value,
+            "targetValues": self.list_target_value_digits()
+        }
+
+    def list_target_value_digits(self):
+        """ return a list with target value digits """
+        value_string = str(self.target_value)
+        digits_list = []
+        for digit in value_string:
+            digits_list.append(int(digit))
+        return digits_list
 
 class PlannedTask(db.Model):
     __table_args__ = (
