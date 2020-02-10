@@ -355,7 +355,7 @@ def handle_habits(habit_id=None):
                 else:
                     status_code = 400
                     response_body = {
-                        "result": "check inputs, some key is missing, this is PUT method, all keys required..."
+                        "result": "HTTP_400_BAD_REQUEST. check inputs, some key is missing, this is PUT method, all keys required..."
                     }
 
             else:
@@ -372,10 +372,33 @@ def handle_habits(habit_id=None):
             }
             
     elif request.method == "DELETE":
-        status_code = 501
-        response_body = { 
-            "result": "method not implemented yet"
-        }
+        # check if habit_id and delete
+        if habit_id:
+            habit_to_delete = Habit.query.filter_by(id=habit_id).one_or_none()
+            if habit_to_delete:
+                try:
+                    db.session.delete(habit_to_delete)
+                    db.session.commit()
+                    status_code = 204
+                    response_body = {}
+                except:
+                    # something went wrong in db committing
+                    print("dunno...")
+                    status_code = 500
+                    response_body = {
+                        "result": "HTTP_500_INTERNAL_SERVER_ERROR. something went wrong on db..."
+                    }
+            else:
+                # habit does not exist...
+                status_code = 404
+                response_body = {
+                    "result": "HTTP_404_NOT_FOUND. oh boy, no such habit here..."
+                }
+        else:
+            status_code = 500
+            response_body = { 
+                "result": "HTTP_666_WTF. you should not be here..."
+            }
     
     return make_response (
         json.dumps(response_body),
