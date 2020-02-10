@@ -249,7 +249,53 @@ def handle_me_query():
         headers
     )
 
+# habits endpoint
+@app.route("/api/habits/", methods=["GET", "POST"])
+@app.route("/api/habits/<habit_id>", methods=["GET", "PUT", "DELETE"])
+@jwt_required
+def handle_habits(habit_id=None):
+    """ handle habits for an authenticated user """
+    headers = {
+        "Content-Type": "application/json"
+    }
+    # grab user
+    auth_user = get_current_user()
+    # check methods
+    if request.method == "GET":
+        # check if habit_id is not none
+        if habit_id:
+            # return specific habit details
+            pass
+        else:
+            # return all user habits
+            pass
+        status_code = 501
+        response_body = { 
+            "result": "method not implemented yet"
+        }
+    elif request.method == "POST":
+        status_code = 501
+        response_body = { 
+            "result": "method not implemented yet"
+        }
+    elif request.method == "PUT":
+        status_code = 501
+        response_body = { 
+            "result": "method not implemented yet"
+        }
+    elif request.method == "DELETE":
+        status_code = 501
+        response_body = { 
+            "result": "method not implemented yet"
+        }
     
+    print(f"this is authenticated user: {auth_user.name}")
+    return make_response (
+        json.dumps(response_body),
+        status_code,
+        headers
+    )
+
 
 # this only runs if `$ python src/main.py` is executed
 if __name__ == '__main__':
