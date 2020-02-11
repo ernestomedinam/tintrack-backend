@@ -28,7 +28,13 @@ class UserRanking(enum.Enum):
     EXPERIENCED = "Experienced"
     VETERAN = "Veteran"
 
-class User(db.Model):
+class TinBase(db.Model):
+    __abstract__ = True
+    __table_args__ = {
+        "mysql_engine": "InnoDB"
+    }
+
+class User(TinBase):
     """ a tintrack user. each user has a personal salt to be mixed with
         password before hashing and storing."""
     id = db.Column(db.Integer, primary_key=True)
@@ -93,7 +99,7 @@ class TokenBlacklist(db.Model):
             "expires": self.expires
         }
 
-class Activity(db.Model):
+class Activity(TinBase):
     """ an activity that has a name and a reason to be included
         in someone's routine, as a habit or a task."""
     __abstract__ = True
@@ -241,7 +247,7 @@ class Habit(Activity):
             digits_list.append(int(digit))
         return digits_list
 
-class PlannedTask(db.Model):
+class PlannedTask(TinBase):
     __table_args__ = (
         db.UniqueConstraint("planned_datetime", "task_id", name="unique_datetime_for_task"),
     )
@@ -263,7 +269,7 @@ class PlannedTask(db.Model):
         self.duration_estimate = duration_estimate
         self.task_id = task_id
 
-class HabitCounter(db.Model):
+class HabitCounter(TinBase):
     __table_args__ = (
         db.UniqueConstraint("date_for_count", "habit_id", name="unique_date_for_habit_counter"),
     )
@@ -282,7 +288,7 @@ class HabitCounter(db.Model):
         self.daily_target = daily_target
         self.habit_id = habit_id
 
-class WeekSchedule(db.Model):
+class WeekSchedule(TinBase):
     id = db.Column(db.Integer, primary_key=True)
     week_number = db.Column(db.Integer, nullable=False)
     task_id = db.Column(db.Integer, db.ForeignKey("task.id", ondelete="CASCADE"), nullable=False)
@@ -335,7 +341,7 @@ class WeekSchedule(db.Model):
                 return None
         return new_week_sched
         
-class Weekday(db.Model):
+class Weekday(TinBase):
     id = db.Column(db.Integer, primary_key=True)
     day_number = db.Column(db.Integer, nullable=False)
     week_schedule_id = db.Column(db.Integer, db.ForeignKey("week_schedule.id", ondelete="CASCADE"), nullable=False)
@@ -392,7 +398,7 @@ class Weekday(db.Model):
 
         return new_weekday
 
-class Daytime(db.Model):
+class Daytime(TinBase):
     id = db.Column(db.Integer, primary_key=True)
     time_of_day = db.Column(db.String(10), nullable=False)
     weekday_id = db.Column(db.Integer, db.ForeignKey("weekday.id", ondelete="CASCADE"), nullable=True)

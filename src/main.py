@@ -73,13 +73,13 @@ def handle_user_registration():
         # there is json content in request
         registration_data = request.json
         # check all required fields are in request data
-        if set(("name", "email", "password", "date_of_birth")).issubset(registration_data):
+        if set(("name", "email", "password", "dateOfBirth")).issubset(registration_data):
             # check email has valid syntax
             if validate_email_syntax(registration_data["email"]):
                 # email seems fine
                 new_user = User(registration_data["name"], registration_data["email"])
                 # check password not empty and date_of_birth input is valid
-                if new_user.set_birth_date(registration_data["date_of_birth"]) and registration_data["password"]:
+                if new_user.set_birth_date(registration_data["dateOfBirth"]) and registration_data["password"]:
                     # user has valid birthdate and password input is not empty
                     new_user.set_password(registration_data["password"])
                     db.session.add(new_user)
@@ -99,7 +99,7 @@ def handle_user_registration():
                         }
                 else:
                     status_code = 400
-                    # date_of_birth is not valid
+                    # date_of_birth is not valid or password came up empty
                     if registration_data["password"]:
                         response_body = {
                             "result": "HTTP_400_BAD_REQUEST. check date input, it's not valid..."
