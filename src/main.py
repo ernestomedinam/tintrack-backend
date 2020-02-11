@@ -9,7 +9,7 @@ from flask_migrate import Migrate
 from flask_swagger import swagger
 from flask_cors import CORS
 from utils import APIException, generate_sitemap, validate_email_syntax
-from models import db, User, Habit
+from models import db, User, Habit, Task
 from sqlalchemy.exc import IntegrityError
 from flask_jwt_extended import (
     JWTManager, jwt_required, create_access_token, set_access_cookies,
@@ -33,6 +33,8 @@ app.config["JWT_TOKEN_LOCATION"] = ["cookies"]
 app.config["JWT_ACCESS_COOKIE_PATH"] = ["/api/"]
 # should be true on production, demands https
 app.config["JWT_COOKIE_SECURE"] = False
+# fix value as desired, datetime object, deltatime object, int for seconds
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = 86400
 # needed for CSRF "protection"
 app.config["JWT_COOKIE_CSRF_PROTECT"] = True
 
@@ -415,23 +417,92 @@ def handle_tasks(task_id=None):
     headers = {
         "Content-Type": "application/json"
     }
+    # grab user from request
     auth_user = get_current_user()
     if request.method == "GET":
-        pass
+        status_code = 501
+        response_body = {
+            "result": " HTTP_501_NOT_IMPLEMENTED. yet..."
+        }
 
     elif request.method == "POST":
-        pass
+        # check data in request
+        new_task_data = request.json
+        
+        # run class validate method to create and return new
+        # object if data was valid, otherwise return none
+        if set((
+            "name", "personalMessage", "durationEstimate",
+            "iconName", "weekSched"
+        )).issubset(new_task_data):
+            # use class method validator
+            if Task.validate(new_task_data):
+                print("data is valid and safe for task creation")
+                # data is valid and safe, proceed to creation
+                # use class method for creation...
+                new_task = Task.create(new_task_data, auth_user.id)
+                if new_task:
+                    status_code = 201
+                    response_body = {
+                        "result": "HTTP_201_CREATED. task created successfully!"
+                    }
+                else:
+                    status_code = 500
+                    response_body = {
+                        "result": "HTTP_500_INTERNAL_SERVER_ERROR. validated but didn't create"
+                    }
+            
+            else:
+                status_code = 400
+                response_body = {
+                    "result": "HTTP_400_BAD_REQUEST. input is not valid for task creation... check and re submit"
+                }
+
+        else: 
+            # missing key
+            status_code = 400
+            response_body = {
+                "result": "HTTP_400_BAD_REQUEST. check your keys, some is missing or was misspelled."
+            }
 
     elif request.method == "PUT":
-        pass
+        status_code = 501
+        response_body = {
+            "result": " HTTP_501_NOT_IMPLEMENTED. yet..."
+        }
 
     elif request.method == "DELETE":
-        pass
+        # check task_id
+        if task_id:
+            task_to_delete = Task.query.filter_by(id=task_id).one_or_none()
+            if task_to_delete:    
+                db.session.delete(task_to_delete)
+                db.session.commit()
+                status_code = 204
+                response_body = {}
+                # try:
+                #     db.session.commit()
+                #     status_code = 204
+                #     response_body = {}
+                # except:
+                #     db.session.rollback()
+                #     print("could not delete on db")
+                #     status_code = 500
+                #     response_body = {
+                #         "result": "HTTP_500_INTERNAL_SERVER_ERROR. we suck at db admin..."
+                #     }
+            else:
+                status_code = 404
+                response_body = {
+                    "result": "HTTP_404_NOT_FOUND. oh boy, no such task in here..."
+                }
+        else:
+            # no task id??
+            status_code = 500
+            response_body = {
+                "result": "HTTP_500_INTERNAL_SERVER_ERROR. not supposed to happen because of flask routing..."
+            }
 
-    status_code = 501
-    response_body = {
-        "result": " HTTP_501_NOT_IMPLEMENTED. yet..."
-    }
     return make_response (
         json.dumps(response_body),
         status_code,

@@ -22,6 +22,12 @@ class PlannedTaskStatus(enum.Enum):
     MISSED = "Missed"
     DONE = "Done"
 
+class UserRanking(enum.Enum):
+    STARTER = "Starter"
+    ENROLLED = "Enrolled"
+    EXPERIENCED = "Experienced"
+    VETERAN = "Veteran"
+
 class User(db.Model):
     """ a tintrack user. each user has a personal salt to be mixed with
         password before hashing and storing."""
@@ -31,8 +37,9 @@ class User(db.Model):
     date_of_birth = db.Column(db.Date, nullable=False)
     password_hash = db.Column(db.String(250), nullable=False, default="default")
     user_salt = db.Column(db.String(120), nullable=False)
-    tasks = db.relationship("Task", backref="user", lazy=True)
-    habits = db.relationship("Habit", backref="user", lazy=True)
+    ranking = db.Column(db.Enum(UserRanking), nullable=False, default="Starter")
+    tasks = db.relationship("Task", backref="user", cascade="all, delete-orphan", passive_deletes=True)
+    habits = db.relationship("Habit", backref="user", cascade="all, delete-orphan", passive_deletes=True)
 
     def __init__(self, name, email):
         if name:
@@ -113,15 +120,68 @@ class Task(Activity):
     id = db.Column(db.Integer, primary_key=True)
     duration_estimate = db.Column(db.Integer, default=0, nullable=False)
     icon_name = db.Column(db.String(50), nullable=False, default="default-task")
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    planned_tasks = db.relationship("PlannedTask", backref="task", lazy=True)
-    week_schedules = db.relationship("WeekSchedule", backref="task", lazy=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    planned_tasks = db.relationship("PlannedTask", backref="task", cascade="all, delete-orphan", passive_deletes=True)
+    week_schedules = db.relationship("WeekSchedule", backref="task", cascade="all, delete-orphan", passive_deletes=True)
 
     def __init__(self, name, personal_message, duration_estimate, icon_name, user_id):
         self.duration_estimate = duration_estimate
         self.icon_name = icon_name
         self.user_id = user_id
         super().__init__(name, personal_message)
+
+    @staticmethod
+    def validate(json_task):
+        """ validate task input and return true or false """
+        weekscheds_are_valid = True
+        # validate week schedule received
+        if len(json_task["weekSched"]) != 4:
+            # not valid if other than 4 weeks were received
+            weekscheds_are_valid = False
+        else:
+            i = 1
+            for week in json_task["weekSched"]:
+                if not WeekSchedule.validate(week, i):
+                    weekscheds_are_valid = False
+                i += 1
+        
+        if (
+            json_task["name"] and json_task["personalMessage"] and 
+            int(json_task["durationEstimate"]) < 240 and
+            json_task["iconName"] and weekscheds_are_valid
+        ):
+            # return valid
+            
+            return True
+        else:
+            # return invalid
+            return False
+
+    @staticmethod
+    def create(json_task, user_id):
+        """ create task and weekschedule objects """
+        new_task = Task(
+            json_task["name"], json_task["personalMessage"],
+            int(json_task["durationEstimate"]), json_task["iconName"],
+            user_id
+        )
+        db.session.add(new_task)
+        try:
+            db.session.commit()
+        except:
+            db.session.rollback()
+            print("something failed in task creation")
+            return None
+        # task has been created, create week scheds
+        for week in json_task["weekSched"]:
+            # use week schedule class method for creation
+            new_week_sched = WeekSchedule.create(week, new_task.id)
+            if not new_week_sched:
+                print("did not receive created weeksched")
+                return None
+        
+        return new_task
+
 
 class Habit(Activity):
     __table_args__ = (
@@ -132,8 +192,8 @@ class Habit(Activity):
     target_period = db.Column(db.Enum(TargetPeriod), nullable=False)
     target_value = db.Column(db.Integer, nullable=False)
     icon_name = db.Column(db.String(50), nullable=False, default="deafult-habit")
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    habit_counters = db.relationship("HabitCounter", backref="habit", lazy=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    habit_counters = db.relationship("HabitCounter", backref="habit", cascade="all, delete-orphan", passive_deletes=True)
 
     def __init__(self, name, personal_message, to_be_enforced, target_period, target_value, icon_name, user_id):
         self.to_be_enforced = to_be_enforced
@@ -190,9 +250,9 @@ class PlannedTask(db.Model):
     # duration is registered in seconds
     duration_estimate = db.Column(db.Integer, nullable=False)
     registered_duration = db.Column(db.Integer)
-    status = db.Column(db.Enum(PlannedTaskStatus), nullable=False, server_default="PENDING")
+    status = db.Column(db.Enum(PlannedTaskStatus), nullable=False, default="Pending")
     marked_done_at = db.Column(db.DateTime)
-    task_id = db.Column(db.Integer, db.ForeignKey("task.id"), nullable=False)
+    task_id = db.Column(db.Integer, db.ForeignKey("task.id", ondelete="CASCADE"), nullable=False)
     previous_activity = db.Column(db.String(120), default="")
     as_felt_before = db.Column(db.String(120), default="")
     next_activity = db.Column(db.String(120), default="")
@@ -211,7 +271,7 @@ class HabitCounter(db.Model):
     date_for_count = db.Column(db.Date, nullable=False)
     count = db.Column(db.Integer, default=0, nullable=False)
     daily_target = db.Column(db.Integer, nullable=False)
-    habit_id = db.Column(db.Integer, db.ForeignKey("habit.id"), nullable=False)
+    habit_id = db.Column(db.Integer, db.ForeignKey("habit.id", ondelete="CASCADE"), nullable=False)
     previous_activity = db.Column(db.String(120), default="")
     as_felt_before = db.Column(db.String(120), default="")
     next_activity = db.Column(db.String(120), default="")
@@ -225,27 +285,117 @@ class HabitCounter(db.Model):
 class WeekSchedule(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     week_number = db.Column(db.Integer, nullable=False)
-    task_id = db.Column(db.Integer, db.ForeignKey("task.id"), nullable=False)
-    weekdays = db.relationship("Weekday", backref="week_schedule", lazy=True)
+    task_id = db.Column(db.Integer, db.ForeignKey("task.id", ondelete="CASCADE"), nullable=False)
+    weekdays = db.relationship("Weekday", backref="week_schedule", cascade="all, delete-orphan", passive_deletes=True)
 
-    def __init__(self, week_number):
+    def __init__(self, week_number, task_id):
         self.week_number = week_number
+        self.task_id = task_id
 
+    @staticmethod
+    def validate(week, week_number):
+        """ validate all four weeks and its days """
+        weekdays_are_valid = True
+        # check days in key
+        if set(("days", "weekNumber")).issubset(week):
+            # now check exactly 7 days in this week days list
+            if len(week["days"]) != 7 or week["weekNumber"] != week_number:
+                # not valid
+                weekdays_are_valid = False
+            else:
+                # now check each day is valid
+                for day in week["days"]:
+                    if not Weekday.validate(day):
+                        weekdays_are_valid = False 
+
+        else:
+            # not valid, missing days key
+            weekdays_are_valid = False
+        
+        return weekdays_are_valid
+
+    @staticmethod
+    def create(week, task_id):
+        # create a week schedule for a task
+        new_week_sched = WeekSchedule(int(week["weekNumber"]), task_id)
+        db.session.add(new_week_sched)
+        try:
+            db.session.commit()
+        except:
+            db.session.rollback()
+            print("something failed saving week sched to database")
+            return None
+        # create week days for this week sched
+        day_number = 1
+        for day in week["days"]:
+            new_weekday = Weekday.create(day, day_number, new_week_sched.id)
+            day_number += 1
+            if not new_weekday:
+                print("didnt receive created weekday")
+                return None
+        return new_week_sched
+        
 class Weekday(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     day_number = db.Column(db.Integer, nullable=False)
-    week_schedule_id = db.Column(db.Integer, db.ForeignKey("week_schedule.id"), nullable=True)
-    daytimes = db.relationship("Daytime", backref="weekday", lazy=True)
+    week_schedule_id = db.Column(db.Integer, db.ForeignKey("week_schedule.id", ondelete="CASCADE"), nullable=False)
+    daytimes = db.relationship("Daytime", backref="weekday", cascade="all, delete-orphan", passive_deletes=True)
 
     def __init__(self, day_number, week_schedule_id):
         self.day_number = day_number
         self.week_schedule_id = week_schedule_id
 
+    @staticmethod
+    def validate(day):
+        """ validate list of daytimes syntax """
+        if len(day) > 0:
+            for daytime in day:
+                if daytime != "any":
+                    try:
+                        seconds = int(daytime)
+                        if not 0 <= seconds < 24 * 3600:
+                            # time received is in one day seconds range
+                            return False
+                    except ValueError:
+                        # try parse as time
+                        try:
+                            new_time = datetime.strptime(daytime, "%H:%M")
+                            # print(f"{new_time.hour*3600 + new_time.minute*60}")
+                            if not new_time:
+                                return False
+                        except:
+                            return False
+                    
+        return True
+
+    @staticmethod
+    def create(day, day_number, week_schedule_id):
+        """ create a weekday and its daytime objects """
+        new_weekday = Weekday(day_number, week_schedule_id)
+        db.session.add(new_weekday)
+        try:
+            db.session.commit()
+        except:
+            db.session.rollback()
+            print("wrong on creating weekday")
+            return None
+        # create daytimes
+        for time_of_day in day:
+            new_time_of_day = Daytime(time_of_day, new_weekday.id)
+            db.session.add(new_time_of_day)
+        try:
+            db.session.commit()
+        except:
+            db.session.rollback()
+            print("wrong on creating daytime")
+            return None
+
+        return new_weekday
 
 class Daytime(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     time_of_day = db.Column(db.String(10), nullable=False)
-    weekday_id = db.Column(db.Integer, db.ForeignKey("weekday.id"), nullable=True)
+    weekday_id = db.Column(db.Integer, db.ForeignKey("weekday.id", ondelete="CASCADE"), nullable=True)
 
     def __init__(self, time_of_day, weekday_id):
         self.time_of_day = time_of_day
