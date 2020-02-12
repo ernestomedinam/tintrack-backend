@@ -1,4 +1,5 @@
 from flask import jsonify, url_for
+from datetime import datetime
 import re
 
 class APIException(Exception):
@@ -45,3 +46,24 @@ def validate_email_syntax(email):
     else:
         # email syntax is not valid
         return False
+
+def parse_tintrack_time_of_day(time_of_day):
+    # check if any
+    if time_of_day == "any":
+        time_to_store = time_of_day
+    else:
+        try:
+            # try parse as number of seconds from 00:00
+            time_to_store = int(time_of_day)
+        except ValueError:
+            # try parse as time
+            try:
+                time_to_seconds = datetime.strptime(time_of_day, "%H:%M")
+                hours_to_seconds = time_to_seconds.hour * 3600
+                minutes_to_seconds = time_to_seconds.minute * 60
+                time_to_store = hours_to_seconds + minutes_to_seconds
+                
+            except:
+                print("wrong on time of day creation")
+                return None
+    return time_to_store

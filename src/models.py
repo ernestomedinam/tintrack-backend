@@ -9,6 +9,7 @@ import json
 from base64 import b64encode
 from dateutil.parser import parse
 from dateutil.relativedelta import relativedelta
+from utils import parse_tintrack_time_of_day
 
 db = SQLAlchemy()
 
@@ -199,6 +200,20 @@ class Task(Activity):
             "weekSched": [week_schedule.serialize() for week_schedule in self.week_schedules]
         }
 
+    def update(self, json_task):
+        """ update task with validated input in json_task """
+        self.name = json_task["name"]
+        self.personal_message = json_task["personalMessage"]
+        self.duration_estimate = int(json_task["durationEstimate"])
+        self.icon_name = json_task["iconName"]
+        # try:
+        #     db.session.commit()
+        # except:
+        #     print("unexpected error saving week_sched")
+        #     db.session.rollback()
+        for week_sched in self.week_schedules:
+            week_sched.update(json_task["weekSched"][week_sched.week_number - 1])
+
 class Habit(Activity):
     __table_args__ = (
         db.UniqueConstraint("user_id", "name", name="unique_habit_for_user"),
@@ -364,6 +379,12 @@ class WeekSchedule(TinBase):
             "days": [weekday.serialize() for weekday in self.weekdays]
         }
 
+    def update(self, json_week_sched):
+        """ update weekday objects for this weeksched """
+        for weekday in self.weekdays:
+            weekday.update(json_week_sched["days"][weekday.day_number - 1])
+
+
 class Weekday(TinBase):
     id = db.Column(db.Integer, primary_key=True)
     day_number = db.Column(db.Integer, nullable=False)
@@ -410,27 +431,31 @@ class Weekday(TinBase):
             return None
         # create daytimes
         for time_of_day in day:
-            # check if any
-            if time_of_day == "any":
-                time_to_store = time_of_day
-            else:
-                try:
-                    # try parse as number of seconds from 00:00
-                    time_to_store = int(time_of_day)
-                except ValueError:
-                    # try parse as time
-                    try:
-                        time_to_seconds = datetime.strptime(time_of_day, "%H:%M")
-                        hours_to_seconds = time_to_seconds.hour * 3600
-                        minutes_to_seconds = time_to_seconds.minute * 60
-                        time_to_store = hours_to_seconds + minutes_to_seconds
+            # # check if any
+            # if time_of_day == "any":
+            #     time_to_store = time_of_day
+            # else:
+            #     try:
+            #         # try parse as number of seconds from 00:00
+            #         time_to_store = int(time_of_day)
+            #     except ValueError:
+            #         # try parse as time
+            #         try:
+            #             time_to_seconds = datetime.strptime(time_of_day, "%H:%M")
+            #             hours_to_seconds = time_to_seconds.hour * 3600
+            #             minutes_to_seconds = time_to_seconds.minute * 60
+            #             time_to_store = hours_to_seconds + minutes_to_seconds
                         
-                    except:
-                        print("wrong on time of day creation")
-                        return None
-            
-            new_time_of_day = Daytime(time_to_store, new_weekday.id)
-            db.session.add(new_time_of_day)
+            #         except:
+            #             print("wrong on time of day creation")
+            #             return None
+            time_to_store = parse_tintrack_time_of_day(time_of_day)
+            if time_to_store:
+                new_time_of_day = Daytime(time_to_store, new_weekday.id)
+                db.session.add(new_time_of_day)
+            else:
+                # something wrong with time parsing...
+                return None
         try:
             db.session.commit()
         except:
@@ -443,6 +468,22 @@ class Weekday(TinBase):
     def serialize(self):
         """ return a dict representation of a weekday """
         return [daytime.serialize() for daytime in self.daytimes]
+
+    def update(self, daytimes_list):
+        Daytime.query.filter_by(weekday_id=self.id).delete()
+        for time_of_day in daytimes_list:
+            time_to_store = parse_tintrack_time_of_day(time_of_day)
+            if time_to_store:
+                new_daytime = Daytime(time_of_day, self.id)
+                db.session.add(new_daytime)
+            else:
+                print("something went wrong parsing incoming time for day time")
+                db.session.rollback()
+        # try:
+        #     db.session.commit()
+        # except:
+        #     print("unexpected error commiting daytime")
+        #     db.session.rollback()
 
 class Daytime(TinBase):
     id = db.Column(db.Integer, primary_key=True)

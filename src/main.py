@@ -483,10 +483,63 @@ def handle_tasks(task_id=None):
             }
 
     elif request.method == "PUT":
-        status_code = 501
-        response_body = {
-            "result": " HTTP_501_NOT_IMPLEMENTED. yet..."
-        }
+        # check data in request
+        edit_task_data = request.json
+        
+        # run class validate method to create and return new
+        # object if data was valid, otherwise return none
+        if set((
+            "name", "personalMessage", "durationEstimate",
+            "iconName", "weekSched"
+        )).issubset(edit_task_data):
+            # check if input data is valid for task
+            if Task.validate(edit_task_data):
+                # data valid, check if task_id
+                if task_id:
+                    # check if task exists
+                    task_to_edit = Task.query.filter_by(id=task_id).one_or_none()
+                    if task_to_edit:
+                        # task exists, validate update input
+                        task_to_edit.update(edit_task_data)
+                        # task_to_edit is updated, try commit()
+                        try:
+                            db.session.commit()
+                            status_code = 200
+                            response_body = {
+                                "result": "HTTP_200_OK. successfully updated task!"
+                            }
+                        except:
+                            status_code = 400
+                            response_body = {
+                                "result": "HTTP_400_BAD_REQUEST. name cannot be the same for two tasks!"
+                            }
+
+                    else:
+                        # oh boy, no such task in here...
+                        status_code = 404
+                        response_body = {
+                            "result": "HTTP_404_NOT_FOUND. oh boy, no such task in here..."
+                        }
+                
+                else:
+                    # there is no task_id in url!!
+                    status_code = 500
+                    response_body = {
+                        "result": "HTTP_500_INTERNAL_SERVER_ERROR. bout to get fired, dunno how this happened..."
+                    }
+            else:
+                # data input is not valid
+                status_code = 400
+                response_body = {
+                    "result": "HTTP_BAD_REQUEST. data input invalid for task creation, please check..."
+                }
+
+        else:
+            # some key might be missing
+            status_code = 400
+            response_body = {
+                "result": "HTTP_400_BAD_REQUEST. check for missing or misspelled key on body..."
+            }
 
     elif request.method == "DELETE":
         # check task_id
