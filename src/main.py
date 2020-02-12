@@ -43,6 +43,28 @@ db.init_app(app)
 CORS(app)
 jwt = JWTManager(app)
 
+# jwt configs
+@jwt.user_claims_loader
+def add_claims_to_access_token(user):
+    return {
+        "name": user.name
+    }
+
+@jwt.user_identity_loader
+def user_identity_lookup(user):
+    return user.id
+
+@jwt.token_in_blacklist_loader
+def check_if_token_revoked(decoded_token):
+    return is_token_revoked(decoded_token)
+
+@jwt.user_loader_callback_loader
+def user_loader_callback(identity):
+    user_from_id = User.query.filter_by(id=identity).first()
+    if not user_from_id:
+        return None
+    return user_from_id
+
 # Handle/serialize errors like a JSON object
 @app.errorhandler(APIException)
 def handle_invalid_usage(error):
@@ -133,28 +155,6 @@ def handle_user_registration():
         status_code,
         headers
     )
-
-# jwt configs
-@jwt.user_claims_loader
-def add_claims_to_access_token(user):
-    return {
-        "name": user.name
-    }
-
-@jwt.user_identity_loader
-def user_identity_lookup(user):
-    return user.id
-
-@jwt.token_in_blacklist_loader
-def check_if_token_revoked(decoded_token):
-    return is_token_revoked(decoded_token)
-
-@jwt.user_loader_callback_loader
-def user_loader_callback(identity):
-    user_from_id = User.query.filter_by(id=identity).first()
-    if not user_from_id:
-        return None
-    return user_from_id
 
 # prune database for expired tokens
 @app.cli.command("clean-expired-tokens")
@@ -420,10 +420,27 @@ def handle_tasks(task_id=None):
     # grab user from request
     auth_user = get_current_user()
     if request.method == "GET":
-        status_code = 501
-        response_body = {
-            "result": " HTTP_501_NOT_IMPLEMENTED. yet..."
-        }
+        # check if get is for all tasks or specific task
+        if task_id:
+            # grab specific task
+            requested_task = Task.query.filter_by(id=task_id).one_or_none()
+            if requested_task:
+                response_body = requested_task.serialize()
+                status_code = 200
+            else:
+                # oh boy, no such task in here
+                status_code = 404
+                response_body = {
+                    "result": "HTTP_404_NOT_FOUND. oh boy, no such task in here..."
+                }
+        
+        else:
+            # grab all tasks
+            user_tasks = Task.query.filter_by(user_id=auth_user.id).all()
+            response_body = []
+            for task in user_tasks:
+                response_body.append(task.serialize())
+            status_code = 200
 
     elif request.method == "POST":
         # check data in request
@@ -447,9 +464,9 @@ def handle_tasks(task_id=None):
                         "result": "HTTP_201_CREATED. task created successfully!"
                     }
                 else:
-                    status_code = 500
+                    status_code = 400
                     response_body = {
-                        "result": "HTTP_500_INTERNAL_SERVER_ERROR. validated but didn't create"
+                        "result": "HTTP_400_BAD_REQUEST. task with same name seems to already exist"
                     }
             
             else:

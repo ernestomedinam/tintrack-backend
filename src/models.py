@@ -1,6 +1,6 @@
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime
+from datetime import datetime, time
 import enum
 import string
 import os
@@ -188,6 +188,16 @@ class Task(Activity):
         
         return new_task
 
+    def serialize(self):
+        """ return dict for task as required by front_end """
+        return {
+            "id": self.id,
+            "name": self.name,
+            "personalMessage": self.personal_message,
+            "durationEstimate": self.duration_estimate,
+            "iconName": self.icon_name,
+            "weekSched": [week_schedule.serialize() for week_schedule in self.week_schedules]
+        }
 
 class Habit(Activity):
     __table_args__ = (
@@ -253,6 +263,11 @@ class PlannedTask(TinBase):
     )
     id = db.Column(db.Integer, primary_key=True)
     planned_datetime = db.Column(db.DateTime, nullable=False)
+    # time_of_day from task_id will settle planned_datetime on planned_task creation; if time_of_day="any"
+    # then planned_datetime will be on time 00:00:00 for corresponding day; if there is already a task planned
+    # for that datetime, then it will settle planned_datetime on +1 second each time. is_any=true flag is intended
+    # for front end response purposes, so that we may respond "any" for planned_task start_time.
+    is_any = db.Column(db.Boolean, nullable=False, default=False)
     # duration is registered in seconds
     duration_estimate = db.Column(db.Integer, nullable=False)
     registered_duration = db.Column(db.Integer)
@@ -340,7 +355,15 @@ class WeekSchedule(TinBase):
                 print("didnt receive created weekday")
                 return None
         return new_week_sched
-        
+
+    def serialize(self):
+        """ return a dict representation of a week schedule as
+            required by front_end """
+        return {
+            "weekNumber": self.week_number,
+            "days": [weekday.serialize() for weekday in self.weekdays]
+        }
+
 class Weekday(TinBase):
     id = db.Column(db.Integer, primary_key=True)
     day_number = db.Column(db.Integer, nullable=False)
@@ -387,7 +410,26 @@ class Weekday(TinBase):
             return None
         # create daytimes
         for time_of_day in day:
-            new_time_of_day = Daytime(time_of_day, new_weekday.id)
+            # check if any
+            if time_of_day == "any":
+                time_to_store = time_of_day
+            else:
+                try:
+                    # try parse as number of seconds from 00:00
+                    time_to_store = int(time_of_day)
+                except ValueError:
+                    # try parse as time
+                    try:
+                        time_to_seconds = datetime.strptime(time_of_day, "%H:%M")
+                        hours_to_seconds = time_to_seconds.hour * 3600
+                        minutes_to_seconds = time_to_seconds.minute * 60
+                        time_to_store = hours_to_seconds + minutes_to_seconds
+                        
+                    except:
+                        print("wrong on time of day creation")
+                        return None
+            
+            new_time_of_day = Daytime(time_to_store, new_weekday.id)
             db.session.add(new_time_of_day)
         try:
             db.session.commit()
@@ -398,6 +440,10 @@ class Weekday(TinBase):
 
         return new_weekday
 
+    def serialize(self):
+        """ return a dict representation of a weekday """
+        return [daytime.serialize() for daytime in self.daytimes]
+
 class Daytime(TinBase):
     id = db.Column(db.Integer, primary_key=True)
     time_of_day = db.Column(db.String(10), nullable=False)
@@ -406,3 +452,13 @@ class Daytime(TinBase):
     def __init__(self, time_of_day, weekday_id):
         self.time_of_day = time_of_day
         self.weekday_id = weekday_id
+
+    def serialize(self):
+        """ return time of day as required by front_end """
+        if self.time_of_day == "any":
+            return self.time_of_day
+        else: 
+            hours = int(self.time_of_day) // 3600
+            minutes = int(self.time_of_day) - hours * 3600
+            time_to_return = time(hour=hours, minute=minutes)
+            return time_to_return.strftime("%H:%M")
