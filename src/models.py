@@ -431,24 +431,6 @@ class Weekday(TinBase):
             return None
         # create daytimes
         for time_of_day in day:
-            # # check if any
-            # if time_of_day == "any":
-            #     time_to_store = time_of_day
-            # else:
-            #     try:
-            #         # try parse as number of seconds from 00:00
-            #         time_to_store = int(time_of_day)
-            #     except ValueError:
-            #         # try parse as time
-            #         try:
-            #             time_to_seconds = datetime.strptime(time_of_day, "%H:%M")
-            #             hours_to_seconds = time_to_seconds.hour * 3600
-            #             minutes_to_seconds = time_to_seconds.minute * 60
-            #             time_to_store = hours_to_seconds + minutes_to_seconds
-                        
-            #         except:
-            #             print("wrong on time of day creation")
-            #             return None
             time_to_store = parse_tintrack_time_of_day(time_of_day)
             if time_to_store:
                 new_time_of_day = Daytime(time_to_store, new_weekday.id)
@@ -474,16 +456,11 @@ class Weekday(TinBase):
         for time_of_day in daytimes_list:
             time_to_store = parse_tintrack_time_of_day(time_of_day)
             if time_to_store:
-                new_daytime = Daytime(time_of_day, self.id)
+                new_daytime = Daytime(time_to_store, self.id)
                 db.session.add(new_daytime)
             else:
                 print("something went wrong parsing incoming time for day time")
                 db.session.rollback()
-        # try:
-        #     db.session.commit()
-        # except:
-        #     print("unexpected error commiting daytime")
-        #     db.session.rollback()
 
 class Daytime(TinBase):
     id = db.Column(db.Integer, primary_key=True)
@@ -500,6 +477,6 @@ class Daytime(TinBase):
             return self.time_of_day
         else: 
             hours = int(self.time_of_day) // 3600
-            minutes = int(self.time_of_day) - hours * 3600
+            minutes = ( int(self.time_of_day) - hours * 3600 ) // 60
             time_to_return = time(hour=hours, minute=minutes)
             return time_to_return.strftime("%H:%M")
