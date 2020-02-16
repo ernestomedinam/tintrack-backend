@@ -6,6 +6,7 @@ import string
 import os
 import math
 import json
+import uuid
 from base64 import b64encode
 from dateutil.parser import parse
 from dateutil.relativedelta import relativedelta
@@ -127,13 +128,16 @@ class Task(Activity):
     id = db.Column(db.Integer, primary_key=True)
     duration_estimate = db.Column(db.Integer, default=0, nullable=False)
     icon_name = db.Column(db.String(50), nullable=False, default="default-task")
+    signature = db.Column(db.String(100), nullable=False, default="default")
     user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
     planned_tasks = db.relationship("PlannedTask", backref="task", cascade="all, delete-orphan", passive_deletes=True)
     week_schedules = db.relationship("WeekSchedule", backref="task", cascade="all, delete-orphan", passive_deletes=True)
+    kpis = db.relationship("TaskKpi", backref="task", cascade="all, delete-orphan", passive_deletes=True)
 
     def __init__(self, name, personal_message, duration_estimate, icon_name, user_id):
         self.duration_estimate = duration_estimate
         self.icon_name = icon_name
+        self.signature = uuid.uuid4().hex
         self.user_id = user_id
         super().__init__(name, personal_message)
 
@@ -206,6 +210,7 @@ class Task(Activity):
         self.personal_message = json_task["personalMessage"]
         self.duration_estimate = int(json_task["durationEstimate"])
         self.icon_name = json_task["iconName"]
+        self.signature = uuid.uuid4().hex
         # try:
         #     db.session.commit()
         # except:
@@ -214,7 +219,159 @@ class Task(Activity):
         for week_sched in self.week_schedules:
             week_sched.update(json_task["weekSched"][week_sched.week_number - 1])
 
+    def check_today(self):
+        """ checks whether planned tasks objects exist for this task
+            for date = today() based on planned tasks # vs times of day for this
+            task on this date and planned_task.signature vs current task signature;
+            returns true if today's planned_task are created and correspond to
+            latest task signature, or if there is no planned_tasks and 
+            task.times_of_day = 0; returns false otherwise """
+        # grab today
+        todays_date = datetime.today()
+        # grab planned tasks for this day
+        planned_tasks = self.planned_tasks
+        # grab times of day for this task today
+        times_of_day = self.get_times_for(todays_date)
+        # check both planned_tasks and times_of_day are not empty
+        if planned_tasks != [] and times_of_day != []:
+            # lists are not empty, check there are as many task.times_of_day as planned_tasks for this task
+            if len(planned_tasks) == len(times_of_day):
+                # same number of tasks checked, check for signature (up-to-dateness)
+                if planned_tasks[0].signature == self.signature:
+                    # today's plan is up to date
+                    return True
+                else:
+                    # today's plan is obsolete
+                    return False
+            else:
+                # number of tasks missmatch for today...
+                return False
+        else:
+            # either no tasks are planned for this date (planned_tasks = []) or there are not
+            # supposed to be any tasks planned for this date (times_of_day = [])
+            if planned_tasks == [] and times_of_day == []:
+                # both are empty, check_today returns true
+                return True
+            else:
+                # there is a missmatch between planned_tasks and times_of_day
+                return False
+
+    def get_times_for(self, date_to_check):
+        """ returns a list with times of day for this task on received
+            datetime.date(); returns empty list if no daytime objects for this date. """
+        # grab year, month and day to check
+        year, month, day = date_to_check.year, date_to_check.month, date_to_check.day
+        # grab datetime for start of year
+        year_start = datetime(year=year, month=1, day=1)
+        # year start was a 1(monday)-7(sunday)
+        start_day_order = year_start.isoweekday()
+        # this many days have passed since year started
+        days_done = date_to_check.date() - year_start.date()
+        # this many weeks have passed...
+        weeks_done = days_done // 7
+        # this means we are currently on week = weeks_done + 1
+        current_week = weeks_done + 1
+        # this many days into current week
+        current_days = days_done - weeks_done * 7
+        # if year started on 1(monday)-3(wednesday), year_start happens on week 1
+        # otherwise, 4(thursday)-7(sunday), year_start happens on week 0
+        # first case means we are in current week, second case means we
+        # actually are on week number current_week - 1
+        if start_day_order > 3:
+            current_week = current_week - 1
+        # now, if year started on anything different than 1(monday), this would mean days_done
+        # did not start occurring on monday but some other day; this means that
+        # current_days into current week should be modified, adding difference between
+        # start_day_order and standard start day order (1-monday).
+        current_days = current_days + start_day_order
+        # now if current_days is > 7
+        if current_days > 7:
+            current_days = current_days - 7
+            current_week = current_week + 1
+        # now we know date_to_check is a 1(monday)-7(sunday)
+        # we handle routines based on 4 week schedules, so we need a weeknumber 1-4
+        while current_week > 4:
+            current_week = current_week - 4
+        # now we also know weeknumber, let's grab times of day
+        daytime_objects = self.week_schedules[current_week - 1].weekdays[current_days - 1].daytimes
+        # start times_of_day list object to return
+        times_of_day = []
+        if len(daytime_objects) > 0:
+            for daytime in daytime_objects:
+                times_of_day.append(daytime.time_of_day)
+        return times_of_day
+
+    def plan_day(self, date_to_plan, projection):
+        """ deletes any planned_task for self on date_to_plan and
+            creates and signs new planned_task objects for self according
+            to weeksched.weekday.daytime's time_of_day and current self signature;
+            returns True of False when planning (projection=False), also making changes
+            on db; returns a list of planned_tasks when projecting, whithout making
+            any changes to db.
+        """
+        # delete current planned_tasks for self on date_to_plan if planning (projection=False)
+        if not projection:
+            # delete planned tasks
+            PlannedTask.query.filter_by(task_id=self.id, planned_date=date_to_plan.date()).delete()
+        else:
+            # declare list to be returned
+            planned_tasks = []
+        # grab times of day for date_to_plan
+        times_of_day = self.get_times_for(date_to_plan)
+        for time in times_of_day:
+            hour = Daytime.get_hours(time)
+            minute = Daytime.get_minutes(time)
+            datetime_to_plan = datetime(
+                year=date_to_plan.year,
+                month=date_to_plan.month,
+                day=date_to_plan.day,
+                hour=hour,
+                minute=minute
+            )
+            new_planned_task = PlannedTask(datetime_to_plan, self.duration_estimate, self.signature, self.id)
+            if time == "any":
+                new_planned_task.is_any = True
+            
+            # if planning, add objects to session
+            if not projection:
+                # add to session
+                db.session.add(new_planned_task)
+            else:
+                # if projecting, only append to list
+                planned_tasks.append(new_planned_task)
+        # if planning, commit changes to db and return true/false
+        if not projection:
+            # commit to db
+
+            # try to commit new planned_task objects to db
+            try:
+                db.session.commit()
+                print("new planned tasks objects seem to have been created successfully")
+                return True
+            except:
+                print("something went wrong when saving new planned tasks to db")
+                db.session.rollback()
+                return False
+        else:
+            # return list
+            return planned_tasks
+
+class TaskKpi(TinBase):
+    """ a task key process indicators:
+        current_streak: times in a row a planned task has been marked as 'done'
+        longest_streak: holds highest value current_streak has ever reached for this task
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    current_streak = db.Column(db.Integer, nullable=False, default=0)
+    longest_streak = db.Column(db.Integer, nullable=False, default=0)
+    task_id = db.Column(db.Integer, db.ForeignKey("task.id", ondelete="CASCADE"), nullable=False)
+
+    def __init__(self, task_id):
+        self.task_id = task_id
+
 class Habit(Activity):
+    """ a habit is a recurrent activity without specific time requirements,
+        usualy taking place several times per day or period. """
     __table_args__ = (
         db.UniqueConstraint("user_id", "name", name="unique_habit_for_user"),
     )
@@ -273,11 +430,11 @@ class Habit(Activity):
         return digits_list
 
 class PlannedTask(TinBase):
-    __table_args__ = (
-        db.UniqueConstraint("planned_datetime", "task_id", name="unique_datetime_for_task"),
-    )
+    """ a planned task is the ocurence, planned or as a record, of a task
+        on a specific time and date, even if sometimes it is 'any'. """
     id = db.Column(db.Integer, primary_key=True)
     planned_datetime = db.Column(db.DateTime, nullable=False)
+    planned_date = db.Column(db.Date, nullable=False)
     # time_of_day from task_id will settle planned_datetime on planned_task creation; if time_of_day="any"
     # then planned_datetime will be on time 00:00:00 for corresponding day; if there is already a task planned
     # for that datetime, then it will settle planned_datetime on +1 second each time. is_any=true flag is intended
@@ -288,15 +445,18 @@ class PlannedTask(TinBase):
     registered_duration = db.Column(db.Integer)
     status = db.Column(db.Enum(PlannedTaskStatus), nullable=False, default="Pending")
     marked_done_at = db.Column(db.DateTime)
+    signature = db.Column(db.String(100), nullable=False)
     task_id = db.Column(db.Integer, db.ForeignKey("task.id", ondelete="CASCADE"), nullable=False)
     previous_activity = db.Column(db.String(120), default="")
     as_felt_before = db.Column(db.String(120), default="")
     next_activity = db.Column(db.String(120), default="")
     as_felt_afterwards = db.Column(db.String(120), default="")
 
-    def __init__(self, planned_datetime, duration_estimate, task_id):
+    def __init__(self, planned_datetime, duration_estimate, signature, task_id):
         self.planned_datetime = planned_datetime
+        self.planned_date = planned_datetime.date()
         self.duration_estimate = duration_estimate
+        self.signature = signature
         self.task_id = task_id
 
 class HabitCounter(TinBase):
@@ -383,7 +543,6 @@ class WeekSchedule(TinBase):
         """ update weekday objects for this weeksched """
         for weekday in self.weekdays:
             weekday.update(json_week_sched["days"][weekday.day_number - 1])
-
 
 class Weekday(TinBase):
     id = db.Column(db.Integer, primary_key=True)
@@ -480,3 +639,20 @@ class Daytime(TinBase):
             minutes = ( int(self.time_of_day) - hours * 3600 ) // 60
             time_to_return = time(hour=hours, minute=minutes)
             return time_to_return.strftime("%H:%M")
+
+    @staticmethod
+    def get_hours(time_of_day):
+        """ returns time_of_day's hours """
+        if time_of_day == "any":
+            return 0
+        else:
+            return int(self.time_of_day) // 3600
+
+    @staticmethod
+    def get_minutes(time_of_day):
+        """ returns time_of_day's minutes """
+        if time_of_day == "any":
+            return 0
+        else:
+            hours =  int(time_of_day) // 3600
+            return ( int(time_of_day) - hours * 3600 ) // 60
