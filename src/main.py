@@ -4,6 +4,7 @@ This module takes care of starting the API Server, Loading the DB and Adding the
 import os
 import json
 import click
+from datetime import datetime
 from flask import Flask, request, jsonify, url_for, make_response
 from flask_migrate import Migrate
 from flask_swagger import swagger
@@ -578,6 +579,62 @@ def handle_tasks(task_id=None):
         status_code,
         headers
     )
+
+# schedules enpoint
+@app.route("/api/schedules/<requested_date>", methods=["GET"])
+@jwt_required
+def handle_schedule_for(requested_date):
+    """ will do and return according to date:
+        - if date is today: checks if today's and tomorrow's schedule 
+            for requesting user are up to date; if check returns false,
+            plans both days and returns today
+        - if date is tomorrow: checks if today's and tomorrow's schedule 
+            for requesting user are up to date; if check returns false,
+            plans both days and returns tomorrow
+        - if date is after tomorrow: checks requesting user's ranking
+            and, if valid, projects tasks and habits on requested_date and
+            returns schedule for requested_date
+        - if date is before today: returns schedule for requested_date
+        - if date is before user was created: returns 400   
+    """
+    headers = {
+        "Content-Type": "application/json"
+    }
+    # grab user from request
+    auth_user = get_current_user()
+    # check if url requested_date is valid date input
+    try:
+        # input is valid
+        date_to_schedule = datetime.strptime(requested_date, "%Y-%m-%d")
+        print(date_to_schedule)
+        
+    except:
+        # input invalid
+        date_to_schedule = None
+        print("input date is not correct")
+
+    if date_to_schedule:
+        # check user ranking and determine days_ahead of requested_date
+        # vs today
+        print(f"user ranking is: {auth_user.ranking.value}")
+        response_body = {
+            "result": "working on it"
+        }
+        status_code = 200
+
+    else:
+        # date input in url is invalid
+        response_body = {
+            "result": "HTTP_404_NOT_FOUND. invalid date requested..."
+        }
+        status_code = 404
+    
+    return make_response (
+        json.dumps(response_body),
+        status_code,
+        headers
+    )
+
 
 
 # this only runs if `$ python src/main.py` is executed

@@ -219,38 +219,36 @@ class Task(Activity):
         for week_sched in self.week_schedules:
             week_sched.update(json_task["weekSched"][week_sched.week_number - 1])
 
-    def check_today(self):
+    def check_plan_for(self, date_to_check):
         """ checks whether planned tasks objects exist for this task
-            for date = today() based on planned tasks # vs times of day for this
+            on date_to_check based on planned tasks # vs times of day for this
             task on this date and planned_task.signature vs current task signature;
             returns true if today's planned_task are created and correspond to
             latest task signature, or if there is no planned_tasks and 
             task.times_of_day = 0; returns false otherwise """
-        # grab today
-        todays_date = datetime.today()
         # grab planned tasks for this day
         planned_tasks = self.planned_tasks
-        # grab times of day for this task today
-        times_of_day = self.get_times_for(todays_date)
+        # grab times of day for this task on date_to_check
+        times_of_day = self.get_times_for(date_to_check)
         # check both planned_tasks and times_of_day are not empty
         if planned_tasks != [] and times_of_day != []:
             # lists are not empty, check there are as many task.times_of_day as planned_tasks for this task
             if len(planned_tasks) == len(times_of_day):
                 # same number of tasks checked, check for signature (up-to-dateness)
                 if planned_tasks[0].signature == self.signature:
-                    # today's plan is up to date
+                    # date_to_check's plan is up to date
                     return True
                 else:
-                    # today's plan is obsolete
+                    # date_to_check's plan is obsolete
                     return False
             else:
-                # number of tasks missmatch for today...
+                # number of tasks missmatch for date_to_check...
                 return False
         else:
             # either no tasks are planned for this date (planned_tasks = []) or there are not
             # supposed to be any tasks planned for this date (times_of_day = [])
             if planned_tasks == [] and times_of_day == []:
-                # both are empty, check_today returns true
+                # both are empty, check_plan_for returns true
                 return True
             else:
                 # there is a missmatch between planned_tasks and times_of_day
@@ -646,7 +644,7 @@ class Daytime(TinBase):
         if time_of_day == "any":
             return 0
         else:
-            return int(self.time_of_day) // 3600
+            return int(time_of_day) // 3600
 
     @staticmethod
     def get_minutes(time_of_day):

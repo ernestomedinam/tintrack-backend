@@ -1,8 +1,8 @@
 """empty message
 
-Revision ID: 4e02ddf5ad77
+Revision ID: 287184c5476c
 Revises: 
-Create Date: 2020-02-11 21:33:58.977832
+Create Date: 2020-02-17 22:22:32.793361
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '4e02ddf5ad77'
+revision = '287184c5476c'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -62,6 +62,7 @@ def upgrade():
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('duration_estimate', sa.Integer(), nullable=False),
     sa.Column('icon_name', sa.String(length=50), nullable=False),
+    sa.Column('signature', sa.String(length=100), nullable=False),
     sa.Column('user_id', sa.Integer(), nullable=False),
     sa.ForeignKeyConstraint(['user_id'], ['user.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
@@ -84,10 +85,13 @@ def upgrade():
     op.create_table('planned_task',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('planned_datetime', sa.DateTime(), nullable=False),
+    sa.Column('planned_date', sa.Date(), nullable=False),
+    sa.Column('is_any', sa.Boolean(), nullable=False),
     sa.Column('duration_estimate', sa.Integer(), nullable=False),
     sa.Column('registered_duration', sa.Integer(), nullable=True),
     sa.Column('status', sa.Enum('PENDING', 'MISSED', 'DONE', name='plannedtaskstatus'), nullable=False),
     sa.Column('marked_done_at', sa.DateTime(), nullable=True),
+    sa.Column('signature', sa.String(length=100), nullable=False),
     sa.Column('task_id', sa.Integer(), nullable=False),
     sa.Column('previous_activity', sa.String(length=120), nullable=True),
     sa.Column('as_felt_before', sa.String(length=120), nullable=True),
@@ -95,7 +99,16 @@ def upgrade():
     sa.Column('as_felt_afterwards', sa.String(length=120), nullable=True),
     sa.ForeignKeyConstraint(['task_id'], ['task.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('planned_datetime', 'task_id', name='unique_datetime_for_task')
+    mysql_engine='InnoDB'
+    )
+    op.create_table('task_kpi',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('current_streak', sa.Integer(), nullable=False),
+    sa.Column('longest_streak', sa.Integer(), nullable=False),
+    sa.Column('task_id', sa.Integer(), nullable=False),
+    sa.ForeignKeyConstraint(['task_id'], ['task.id'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id'),
+    mysql_engine='InnoDB'
     )
     op.create_table('week_schedule',
     sa.Column('id', sa.Integer(), nullable=False),
@@ -129,6 +142,7 @@ def downgrade():
     op.drop_table('daytime')
     op.drop_table('weekday')
     op.drop_table('week_schedule')
+    op.drop_table('task_kpi')
     op.drop_table('planned_task')
     op.drop_table('habit_counter')
     op.drop_table('task')
