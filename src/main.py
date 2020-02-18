@@ -10,7 +10,7 @@ from flask_migrate import Migrate
 from flask_swagger import swagger
 from flask_cors import CORS
 from utils import APIException, generate_sitemap, validate_email_syntax
-from models import db, User, Habit, Task
+from models import db, User, Habit, Task, UserRanking
 from sqlalchemy.exc import IntegrityError
 from flask_jwt_extended import (
     JWTManager, jwt_required, create_access_token, set_access_cookies,
@@ -616,11 +616,60 @@ def handle_schedule_for(requested_date):
     if date_to_schedule:
         # check user ranking and determine days_ahead of requested_date
         # vs today
-        print(f"user ranking is: {auth_user.ranking.value}")
-        response_body = {
-            "result": "working on it"
-        }
-        status_code = 200
+        days_ahead = date_to_schedule.date() - datetime.today().date()
+        # user is valid as in user's ranking is enough to watch days_ahead
+        ranking_is_enough = True
+        print(f"user ranking is: {auth_user.ranking}")
+        print(f"days_ahead = {days_ahead}")
+        if auth_user.ranking == UserRanking.STARTER:
+            if not days_ahead.days < 1:
+                # starter's ranking not enough
+                ranking_is_enough = False
+                response_body = {
+                    "result": "more than today, until anxiety passes by, no sense for you to know it makes..."
+                }
+                status_code = 400
+
+        elif auth_user.ranking == UserRanking.ENROLLED:
+            if not days_ahead.days < 8:
+                # enrolled's ranking not enough
+                ranking_is_enough = False
+                response_body = {
+                    "result": "before complexity you're able to face, master a building block you must..."
+                }
+                status_code = 400
+
+        elif auth_user.ranking == UserRanking.EXPERIENCED:
+            if not days_ahead.days < 15:
+                # experienced's ranking not enough
+                ranking_is_enough = False
+                response_body = {
+                    "result": "a virtue, patience is; enjoyable and simple, the learning process it makes..."
+                }
+                status_code = 400
+
+        elif auth_user.ranking == UserRanking.VETERAN:
+            if not days_ahead.days < 29:
+                # veteran's ranking not enough
+                ranking_is_enough = False
+                response_body = {
+                    "result": "as a deceptive illusion, far future a routine master sees..."
+                }
+                status_code = 400
+
+        
+        else:
+            response_body = {
+                "result": "Not reading ranking right"
+            }
+            status_code = 203
+
+        if ranking_is_enough:
+            response_body = {
+                "result": "we shall give you some data soon..."
+            }
+            status_code = 200
+
 
     else:
         # date input in url is invalid
