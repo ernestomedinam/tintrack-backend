@@ -1,6 +1,6 @@
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 import enum
 import string
 import os
@@ -266,11 +266,11 @@ class Task(Activity):
         # this many days have passed since year started
         days_done = date_to_check.date() - year_start.date()
         # this many weeks have passed...
-        weeks_done = days_done // 7
+        weeks_done = days_done.days // 7
         # this means we are currently on week = weeks_done + 1
         current_week = weeks_done + 1
         # this many days into current week
-        current_days = days_done - weeks_done * 7
+        current_days = days_done.days - weeks_done * 7
         # if year started on 1(monday)-3(wednesday), year_start happens on week 1
         # otherwise, 4(thursday)-7(sunday), year_start happens on week 0
         # first case means we are in current week, second case means we
@@ -299,7 +299,7 @@ class Task(Activity):
                 times_of_day.append(daytime.time_of_day)
         return times_of_day
 
-    def plan_day(self, date_to_plan, projection):
+    def plan_day(self, date_to_plan, projection=False):
         """ deletes any planned_task for self on date_to_plan and
             creates and signs new planned_task objects for self according
             to weeksched.weekday.daytime's time_of_day and current self signature;
@@ -456,6 +456,12 @@ class PlannedTask(TinBase):
         self.duration_estimate = duration_estimate
         self.signature = signature
         self.task_id = task_id
+    
+    def serialize(self):
+        """ return a planned task dict as expected by front end client """
+        return {
+            "name": self.task.name
+        }
 
 class HabitCounter(TinBase):
     __table_args__ = (

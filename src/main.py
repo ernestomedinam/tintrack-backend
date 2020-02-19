@@ -4,13 +4,14 @@ This module takes care of starting the API Server, Loading the DB and Adding the
 import os
 import json
 import click
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, url_for, make_response
 from flask_migrate import Migrate
 from flask_swagger import swagger
 from flask_cors import CORS
 from utils import APIException, generate_sitemap, validate_email_syntax
-from models import db, User, Habit, Task, UserRanking
+from models import db, User, Habit, Task, UserRanking, PlannedTask
+from sqlalchemy import and_
 from sqlalchemy.exc import IntegrityError
 from flask_jwt_extended import (
     JWTManager, jwt_required, create_access_token, set_access_cookies,
@@ -602,6 +603,7 @@ def handle_schedule_for(requested_date):
     }
     # grab user from request
     auth_user = get_current_user()
+    today = datetime.today()
     # check if url requested_date is valid date input
     try:
         # input is valid
@@ -616,7 +618,7 @@ def handle_schedule_for(requested_date):
     if date_to_schedule:
         # check user ranking and determine days_ahead of requested_date
         # vs today
-        days_ahead = date_to_schedule.date() - datetime.today().date()
+        days_ahead = date_to_schedule.date() - today.date()
         # user is valid as in user's ranking is enough to watch days_ahead
         ranking_is_enough = True
         print(f"user ranking is: {auth_user.ranking}")
@@ -665,10 +667,57 @@ def handle_schedule_for(requested_date):
             status_code = 203
 
         if ranking_is_enough:
-            response_body = {
-                "result": "we shall give you some data soon..."
-            }
-            status_code = 200
+            # check if day is today, tomorrow, past or far future
+            if days_ahead == timedelta(days=0) or days_ahead == timedelta(days=1):
+                # date_to_schedule is today or tomorrow; check
+                # both days and update if not up to date
+                # grab user tasks
+                user_tasks = Task.query.filter_by(user_id=auth_user.id).all()
+                
+                # for each task now we check today's and tomorrow's plan
+                for task in user_tasks:
+                    if not task.check_plan_for(today):
+                        # update today's plan for this task
+                        task.plan_day(today)
+                    if not task.check_plan_for(today + timedelta(days=1)):
+                        # update tomorrow's plan for this task
+                        task.plan_day(today + timedelta(days=1))
+
+                # now, if date_to_schedule is today, we respond with
+                # today's planned_tasks
+                status_code = 200
+                if days_ahead == timedelta(days=0):    
+                    # grab user planned tasks for today
+                    planned_tasks = PlannedTask.query.filter(
+                        PlannedTask.planned_date == today.date()
+                    ).all()
+                    
+                else:
+                    # grab user planned tasks for tomorrow
+                    planned_tasks = PlannedTask.query.filter(
+                        PlannedTask.planned_date == today.date() + timedelta(days=1)
+                    ).all()
+                
+                response_body = []
+                for planned_task in planned_tasks:
+                    response_body.append(planned_task.serialize())
+
+            elif days_ahead < timedelta(days=0):
+                # date_to_schedule is a day before today; not
+                # creating anything, just query and respond
+                response_body = {
+                    "result": "we shall give you some data soon..."
+                }
+                status_code = 200
+
+            else:
+                # date_to_schedule is the day after tomorrow
+                # not creating any planned_task, not checking,
+                # only projecting...
+                response_body = {
+                    "result": "we shall give you some data soon..."
+                }
+                status_code = 200
 
 
     else:
