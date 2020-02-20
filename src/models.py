@@ -234,8 +234,8 @@ class Task(Activity):
             returns true if today's planned_task are created and correspond to
             latest task signature, or if there is no planned_tasks and 
             task.times_of_day = 0; returns false otherwise """
-        # grab planned tasks for this day
-        planned_tasks = PlannedTask.query.filter_by(planned_date=date_to_check.date()).all()
+        # grab planned tasks for this day and this task!
+        planned_tasks = PlannedTask.query.filter_by(planned_date=date_to_check.date()).filter_by(task_id=self.id).all()
         # grab times of day for this task on date_to_check
         times_of_day = self.get_times_for(date_to_check)
         # check both planned_tasks and times_of_day are not empty
@@ -245,21 +245,26 @@ class Task(Activity):
                 # same number of tasks checked, check for signature (up-to-dateness)
                 if planned_tasks[0].signature == self.signature:
                     # date_to_check's plan is up to date
+                    # print("up to date")
                     return True
                 else:
                     # date_to_check's plan is obsolete
+                    # print("signature missmatch")
                     return False
             else:
                 # number of tasks missmatch for date_to_check...
+                # print("amount missmatch")
                 return False
         else:
             # either no tasks are planned for this date (planned_tasks = []) or there are not
             # supposed to be any tasks planned for this date (times_of_day = [])
             if planned_tasks == [] and times_of_day == []:
                 # both are empty, check_plan_for returns true
+                # print("up to date, no planned tasks")
                 return True
             else:
                 # there is a missmatch between planned_tasks and times_of_day
+                # print("one is cero, amount missmatch")
                 return False
 
     def get_times_for(self, date_to_check):
@@ -488,6 +493,41 @@ class PlannedTask(TinBase):
         self.signature = signature
         self.task_id = task_id
     
+    def projectize(self, kpi_datetime, task_id):
+        """ return a projected task dict as expected by fron end client
+            mimics serialize and adds things that would only be available
+            for planned_task object after db commit().
+        """
+        task = Task.query.filter_by(id=task_id).one_or_none()
+        if task:
+            if self.is_any:
+                is_any = self.is_any
+            else:
+                is_any = False
+
+            return {
+                "id": uuid.uuid4().hex,
+                "startTime": self.planned_datetime.strftime("%H:%M"),
+                "durationEstimate": self.duration_estimate,
+                "status": PlannedTaskStatus.PENDING.value,
+                "name": task.name,
+                "iconName": task.icon_name,
+                "personalMessage": task.personal_message,
+                "prevActivity": "",
+                "nextActivity": "",
+                "duration": 0,
+                "signature": self.signature,
+                "isAny": is_any,
+                "kpiValues": task.get_kpis_for(kpi_datetime)
+            }
+        else:
+            print("shit, something is wrong with that task_id")
+            return {
+                "a problem": "there is"
+            }
+        
+
+
     def serialize(self, kpi_datetime):
         """ return a planned task dict as expected by front end client """
         return {
@@ -501,6 +541,8 @@ class PlannedTask(TinBase):
             "prevActivity": self.previous_activity,
             "nextActivity": self.next_activity,
             "duration": self.registered_duration,
+            "signature": self.signature,
+            "isAny": self.is_any,
             "kpiValues": self.task.get_kpis_for(kpi_datetime)
         }
 

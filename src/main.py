@@ -606,7 +606,6 @@ def handle_schedule_for(requested_date, hours_offset=0):
         "Content-Type": "application/json"
     }
     
-    print(f"this is hour offset: {int(hours_offset)}")
     # grab user from request
     auth_user = get_current_user()
     # turn datetime.today() to a today valid for requesting user, based
@@ -618,27 +617,22 @@ def handle_schedule_for(requested_date, hours_offset=0):
     else:
         today = utc_today + timedelta(hours=abs(hours))
 
-    print(f"this is today: {today}")
-
-    # today = datetime.today()
-    
-    print(f"this is today: {today}")
     # check if url requested_date is valid date input
     try:
         # input is valid
         date_to_schedule = datetime.strptime(requested_date, "%Y-%m-%d")
-        print(date_to_schedule)
         
     except:
         # input invalid
         date_to_schedule = None
         print("input date is not correct")
 
+    print(f"this is date_to_schedule {date_to_schedule}")
+
     if date_to_schedule:
         # check user ranking and determine days_ahead of requested_date
         # vs today
         days_ahead = date_to_schedule.date() - today.date()
-        print(f"this is date for today: {today}")
         # user is valid as in user's ranking is enough to watch days_ahead
         ranking_is_enough = True
         if auth_user.ranking == UserRanking.STARTER:
@@ -685,12 +679,25 @@ def handle_schedule_for(requested_date, hours_offset=0):
 
         if ranking_is_enough:
             # check if day is today, tomorrow, past or far future
+            # grab user tasks
+            user_tasks = Task.query.filter_by(user_id=auth_user.id).all()
+
+            # build dahsboardDay object in response; as it's based on date_to_schedule
+            # it's good for all responses
+            response_body = {}
+            date_specs = get_date_specs(date_to_schedule)
+            response_body["year"] = date_specs["year"]
+            response_body["month"] = date_specs["month"]
+            response_body["day"] = date_specs["day"]
+            response_body["dayName"] = date_specs["day_name"]
+            response_body["dayOrder"] = date_specs["day_order"]
+            response_body["weekNumber"] = date_specs["week_number"]
+            response_body["plannedTasks"] = []
+            
             if days_ahead == timedelta(days=0) or days_ahead == timedelta(days=1):
                 # date_to_schedule is today or tomorrow; check
                 # both days and update if not up to date
-                # grab user tasks
-                user_tasks = Task.query.filter_by(user_id=auth_user.id).all()
-                
+
                 # for each task now we check today's and tomorrow's plan
                 for task in user_tasks:
                     if not task.check_plan_for(today):
@@ -705,28 +712,23 @@ def handle_schedule_for(requested_date, hours_offset=0):
                 # now, if date_to_schedule is today, we respond with
                 # today's planned_tasks
                 status_code = 200
+                planned_tasks = []
                 if days_ahead == timedelta(days=0):    
                     # grab user planned tasks for today
-                    planned_tasks = PlannedTask.query.filter(
-                        PlannedTask.planned_date == today.date()
-                    ).all()
+                    for task in user_tasks:
+                        planned_tasks += PlannedTask.query.filter(
+                            PlannedTask.planned_date == today.date()
+                        ).filter_by(task_id=task.id).all()
                     
                 else:
                     # grab user planned tasks for tomorrow
-                    planned_tasks = PlannedTask.query.filter(
-                        PlannedTask.planned_date == today.date() + timedelta(days=1)
-                    ).all()
+                    for task in user_tasks:
+                        planned_tasks = PlannedTask.query.filter(
+                            PlannedTask.planned_date == today.date() + timedelta(days=1)
+                        ).filter_by(task_id=task.id).all()
                 
-                response_body = {}
-                date_specs = get_date_specs(date_to_schedule)
-                # build dahsboardDay object
-                response_body["year"] = date_specs["year"]
-                response_body["month"] = date_specs["month"]
-                response_body["day"] = date_specs["day"]
-                response_body["dayName"] = date_specs["day_name"]
-                response_body["dayOrder"] = date_specs["day_order"]
-                response_body["weekNumber"] = date_specs["week_number"]
-                response_body["plannedTasks"] = []
+                # complete dashboardDay object in response, adding
+                # planned tasks to respond with
                 today_start = datetime(year=today.year, month=today.month, day=today.day, hour=0, minute=0, second=0)
                 for planned_task in planned_tasks:
                     response_body["plannedTasks"].append(planned_task.serialize(today_start))
@@ -734,18 +736,33 @@ def handle_schedule_for(requested_date, hours_offset=0):
             elif days_ahead < timedelta(days=0):
                 # date_to_schedule is a day before today; not
                 # creating anything, just query and respond
-                response_body = {
-                    "result": "we shall give you some data soon..."
-                }
+
+                # for each task we grab planned tasks on date_to_schedule
+                planned_tasks = []
+                for task in user_tasks:
+                    planned_tasks += PlannedTask.query.filter(
+                        PlannedTask.planned_date == date_to_schedule.date()
+                    ).filter_by(task_id=task.id).all()
+                
+                # complete dashboardDay object in response, adding
+                # planned tasks to respond with
+                for planned_task in planned_tasks:
+                    response_body["plannedTasks"].append(planned_task.serialize(planned_task.planned_datetime))
                 status_code = 200
 
             else:
                 # date_to_schedule is the day after tomorrow
                 # not creating any planned_task, not checking,
                 # only projecting...
-                response_body = {
-                    "result": "we shall give you some data soon..."
-                }
+                projected_tasks = []
+                for task in user_tasks:
+                    projected_tasks += task.plan_day(date_to_schedule, True)
+
+                # complete dashboardDay object in response, adding
+                # prijected tasks as planned tasks to respond with
+                today_start = datetime(year=today.year, month=today.month, day=today.day, hour=0, minute=0, second=0)
+                for projected_task in projected_tasks:
+                    response_body["plannedTasks"].append(projected_task.projectize(today_start, projected_task.task_id))
                 status_code = 200
 
     else:
