@@ -106,6 +106,7 @@ class Activity(TinBase):
     __abstract__ = True
     name = db.Column(db.String(120), nullable=False)
     personal_message = db.Column(db.String(250), nullable=False)
+    signature = db.Column(db.String(100), nullable=False, default="default")
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     last_edited_at = db.Column(db.DateTime, nullable=False)
 
@@ -113,10 +114,12 @@ class Activity(TinBase):
         self.name = name.strip()
         self.personal_message = personal_message.strip()
         self.last_edited_at = datetime.now()
+        self.signature = uuid.uuid4().hex
 
     def update(self, name, personal_message):
         self.name = name
         self.personal_message = personal_message
+        self.signature = uuid.uuid4().hex
 
 class Task(Activity):
     """ a task is a periodic activity that takes place in specific times
@@ -127,7 +130,6 @@ class Task(Activity):
     id = db.Column(db.Integer, primary_key=True)
     duration_estimate = db.Column(db.Integer, default=0, nullable=False)
     icon_name = db.Column(db.String(50), nullable=False, default="default-task")
-    signature = db.Column(db.String(100), nullable=False, default="default")
     user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
     planned_tasks = db.relationship("PlannedTask", backref="task", cascade="all, delete-orphan", passive_deletes=True)
     week_schedules = db.relationship("WeekSchedule", backref="task", cascade="all, delete-orphan", passive_deletes=True)
@@ -136,7 +138,6 @@ class Task(Activity):
     def __init__(self, name, personal_message, duration_estimate, icon_name, user_id):
         self.duration_estimate = duration_estimate
         self.icon_name = icon_name
-        self.signature = uuid.uuid4().hex
         self.user_id = user_id
         super().__init__(name, personal_message)
 
@@ -218,12 +219,6 @@ class Task(Activity):
         self.personal_message = json_task["personalMessage"]
         self.duration_estimate = int(json_task["durationEstimate"])
         self.icon_name = json_task["iconName"]
-        self.signature = uuid.uuid4().hex
-        # try:
-        #     db.session.commit()
-        # except:
-        #     print("unexpected error saving week_sched")
-        #     db.session.rollback()
         for week_sched in self.week_schedules:
             week_sched.update(json_task["weekSched"][week_sched.week_number - 1])
 
@@ -463,6 +458,26 @@ class Habit(Activity):
             digits_list.append(int(digit))
         return digits_list
 
+    def fix_counter_for(self, date_to_check):
+        """ works out habit counter situation for this habit, meaning that
+            if it does not exist for date_to_check it gets created; if it
+            exists but is out of date (signature missmatch) it gets updated.
+            this method should only be used on date_to_check >= today...
+        """
+        pass
+
+    def counter_for(self, date_to_plan):
+        """ creates and commits to db a new habit_counter object """
+        pass
+
+    def get_daily_target(self):
+        """ return a float value that represents daily target based on 
+            target_period and target_value. this methos is used to store
+            daily_target for habit_counters.
+        """
+        pass
+
+
 class PlannedTask(TinBase):
     """ a planned task is the ocurence, planned or as a record, of a task
         on a specific time and date, even if sometimes it is 'any'. """
@@ -526,8 +541,6 @@ class PlannedTask(TinBase):
                 "a problem": "there is"
             }
         
-
-
     def serialize(self, kpi_datetime):
         """ return a planned task dict as expected by front end client """
         return {
@@ -547,6 +560,10 @@ class PlannedTask(TinBase):
         }
 
 class HabitCounter(TinBase):
+    """ a habit counter is a kind of planned task that takes place everyday and
+        which occurrences are all recorded in one single element, that day's habit 
+        counter for said habit.
+    """
     __table_args__ = (
         db.UniqueConstraint("date_for_count", "habit_id", name="unique_date_for_habit_counter"),
     )
@@ -554,16 +571,42 @@ class HabitCounter(TinBase):
     date_for_count = db.Column(db.Date, nullable=False)
     count = db.Column(db.Integer, default=0, nullable=False)
     daily_target = db.Column(db.Integer, nullable=False)
+    signature = db.Column(db.String(100), nullable=False)
     habit_id = db.Column(db.Integer, db.ForeignKey("habit.id", ondelete="CASCADE"), nullable=False)
     previous_activity = db.Column(db.String(120), default="")
     as_felt_before = db.Column(db.String(120), default="")
     next_activity = db.Column(db.String(120), default="")
     as_felt_afterwards = db.Column(db.String(120), default="")
 
-    def __init__(self, date_for_count, daily_target, habit_id):
+    def __init__(self, date_for_count, daily_target, signature, habit_id):
         self.date_for_count = date_for_count
         self.daily_target = daily_target
+        self.signature = signature
         self.habit_id = habit_id
+
+    def serialize(self):
+        """ return habit counter as dict required by front end client """
+        pass
+    
+    def projectize(self):
+        """ return non existent habit counter as dict required by front end client """
+        pass 
+
+    def sign_latest(self):
+        """ updates habit_counter to latest habit version and gets signed """
+        pass
+
+    def get_kpi(self):
+        """ returns a list of dictionaries:
+            - current_period: legend according to current target_period on habit from habit_id; 'month', 'week' or 'today'.
+                'numbers' is a list of digits for current_value, which represents the sum of habitCounters count for this
+                period (this month for month, this week for week, today for today)
+            - lately_period: legend is 'lately'; value comes from the sum of habitCounters count for this period and some time
+                before; for 'month', lately is last 28 days and last 28 days before that; for 'week', lately is last 14 days
+                and last 14 days before that; for 'today', lately is last 7 days.
+            - target_period: legent is 'target'; value comes from self.daily_target * 28 || 7 || 1, for 'month', 'week', 'today'
+        """
+        pass
 
 class WeekSchedule(TinBase):
     id = db.Column(db.Integer, primary_key=True)
