@@ -1,5 +1,5 @@
 from flask import jsonify, url_for
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 
 class APIException(Exception):
@@ -67,3 +67,57 @@ def parse_tintrack_time_of_day(time_of_day):
                 print("wrong on time of day creation")
                 return None
     return time_to_store
+
+def get_date_specs(datetime_object):
+    """ returns a dictionary containing:
+        - datatime_object's year, month and day
+        - week_number according to year_start
+        - day_order and day_name according to year_start
+    """
+    # grab year, month and day
+    year, month, day = datetime_object.year, datetime_object.month, datetime_object.day
+    # grab datetime for start of year
+    year_start = datetime(year=year, month=1, day=1)
+    # year start was a 1(monday)-7(sunday)
+    start_day_order = year_start.isoweekday()
+    # this many days have passed since year started (this is a timedelta object)
+    days_done = datetime_object.date() - year_start.date()
+    # this many weeks have passed...
+    weeks_done = days_done.days // 7
+    # this means we are currently on week = weeks_done + 1
+    current_week = weeks_done + 1
+    # and this many days into current week
+    current_days = days_done.days - weeks_done * 7
+
+    # if year started on 1(monday)-3(wednesday), year_start happens on week 1
+    # otherwise, 4(thursday)-7(sunday), year_start happens on week 0
+    # first case means we are in current week, second case means we
+    # actually are on week number current_week - 1
+    if start_day_order > 3:
+        current_week = current_week - 1
+        # in this case, week 0 is a week 4...
+        if current_week == 0:
+            current_week = 4
+    # now, if year started on anything different than 1(monday), this would mean days_done
+    # did not start occurring on monday but some other day; this means that
+    # current_days into current week should be modified, adding difference between
+    # start_day_order and standard start day order (1-monday).
+    current_days = current_days + start_day_order
+    # now if current_days is > 7
+    if current_days > 7:
+        current_days = current_days - 7
+        current_week = current_week + 1
+    # now we know date_to_check is a 1(monday)-7(sunday)
+    # we handle routines based on 4 week schedules, so we need a weeknumber 1-4
+    while current_week > 4:
+        current_week = current_week - 4
+
+    # now we return promised dictionary
+    return {
+        "year": year,
+        "month": month,
+        "day": day,
+        "week_number": current_week,
+        "day_order": current_days,
+        "day_name": datetime_object.strftime("%A")
+    }

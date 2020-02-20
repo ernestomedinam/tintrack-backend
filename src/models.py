@@ -10,7 +10,7 @@ import uuid
 from base64 import b64encode
 from dateutil.parser import parse
 from dateutil.relativedelta import relativedelta
-from utils import parse_tintrack_time_of_day
+from utils import parse_tintrack_time_of_day, get_date_specs
 
 db = SQLAlchemy()
 
@@ -227,7 +227,7 @@ class Task(Activity):
             latest task signature, or if there is no planned_tasks and 
             task.times_of_day = 0; returns false otherwise """
         # grab planned tasks for this day
-        planned_tasks = self.planned_tasks
+        planned_tasks = PlannedTask.query.filter_by(planned_date=date_to_check.date()).all()
         # grab times of day for this task on date_to_check
         times_of_day = self.get_times_for(date_to_check)
         # check both planned_tasks and times_of_day are not empty
@@ -256,42 +256,16 @@ class Task(Activity):
 
     def get_times_for(self, date_to_check):
         """ returns a list with times of day for this task on received
-            datetime.date(); returns empty list if no daytime objects for this date. """
-        # grab year, month and day to check
-        year, month, day = date_to_check.year, date_to_check.month, date_to_check.day
-        # grab datetime for start of year
-        year_start = datetime(year=year, month=1, day=1)
-        # year start was a 1(monday)-7(sunday)
-        start_day_order = year_start.isoweekday()
-        # this many days have passed since year started
-        days_done = date_to_check.date() - year_start.date()
-        # this many weeks have passed...
-        weeks_done = days_done.days // 7
-        # this means we are currently on week = weeks_done + 1
-        current_week = weeks_done + 1
-        # this many days into current week
-        current_days = days_done.days - weeks_done * 7
-        # if year started on 1(monday)-3(wednesday), year_start happens on week 1
-        # otherwise, 4(thursday)-7(sunday), year_start happens on week 0
-        # first case means we are in current week, second case means we
-        # actually are on week number current_week - 1
-        if start_day_order > 3:
-            current_week = current_week - 1
-        # now, if year started on anything different than 1(monday), this would mean days_done
-        # did not start occurring on monday but some other day; this means that
-        # current_days into current week should be modified, adding difference between
-        # start_day_order and standard start day order (1-monday).
-        current_days = current_days + start_day_order
-        # now if current_days is > 7
-        if current_days > 7:
-            current_days = current_days - 7
-            current_week = current_week + 1
-        # now we know date_to_check is a 1(monday)-7(sunday)
-        # we handle routines based on 4 week schedules, so we need a weeknumber 1-4
-        while current_week > 4:
-            current_week = current_week - 4
-        # now we also know weeknumber, let's grab times of day
-        daytime_objects = self.week_schedules[current_week - 1].weekdays[current_days - 1].daytimes
+            datetime.date(); returns empty list if no daytime objects for this date.
+        """
+
+        # get week_number and day_order from date_to_check
+        date_specs = get_date_specs(date_to_check)
+        week_number = int(date_specs["week_number"]) - 1
+        day_order = int(date_specs["day_order"]) - 1
+        
+        # now we know week_number and day_order, let's grab times of day
+        daytime_objects = self.week_schedules[week_number].weekdays[day_order].daytimes
         # start times_of_day list object to return
         times_of_day = []
         if len(daytime_objects) > 0:
@@ -340,14 +314,11 @@ class Task(Activity):
         # if planning, commit changes to db and return true/false
         if not projection:
             # commit to db
-
             # try to commit new planned_task objects to db
             try:
                 db.session.commit()
-                print("new planned tasks objects seem to have been created successfully")
                 return True
             except:
-                print("something went wrong when saving new planned tasks to db")
                 db.session.rollback()
                 return False
         else:
@@ -440,7 +411,7 @@ class PlannedTask(TinBase):
     is_any = db.Column(db.Boolean, nullable=False, default=False)
     # duration is registered in seconds
     duration_estimate = db.Column(db.Integer, nullable=False)
-    registered_duration = db.Column(db.Integer)
+    registered_duration = db.Column(db.Integer, nullable=False, default=0)
     status = db.Column(db.Enum(PlannedTaskStatus), nullable=False, default="Pending")
     marked_done_at = db.Column(db.DateTime)
     signature = db.Column(db.String(100), nullable=False)
@@ -460,7 +431,16 @@ class PlannedTask(TinBase):
     def serialize(self):
         """ return a planned task dict as expected by front end client """
         return {
-            "name": self.task.name
+            "id": self.id,
+            "startTime": self.planned_datetime.strftime("%H:%M"),
+            "durationEstimate": self.duration_estimate,
+            "status": self.status.value,
+            "name": self.task.name,
+            "iconName": self.task.icon_name,
+            "personalMessage": self.task.personal_message,
+            "prevActivity": self.previous_activity,
+            "nextActivity": self.next_activity,
+            "duration": self.registered_duration
         }
 
 class HabitCounter(TinBase):

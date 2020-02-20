@@ -4,12 +4,15 @@ This module takes care of starting the API Server, Loading the DB and Adding the
 import os
 import json
 import click
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from flask import Flask, request, jsonify, url_for, make_response
 from flask_migrate import Migrate
 from flask_swagger import swagger
 from flask_cors import CORS
-from utils import APIException, generate_sitemap, validate_email_syntax
+from utils import (
+    APIException, generate_sitemap, validate_email_syntax,
+    get_date_specs
+)
 from models import db, User, Habit, Task, UserRanking, PlannedTask
 from sqlalchemy import and_
 from sqlalchemy.exc import IntegrityError
@@ -583,8 +586,9 @@ def handle_tasks(task_id=None):
 
 # schedules enpoint
 @app.route("/api/schedules/<requested_date>", methods=["GET"])
+@app.route("/api/schedules/<requested_date>/<hours_offset>", methods=["GET"])
 @jwt_required
-def handle_schedule_for(requested_date):
+def handle_schedule_for(requested_date, hours_offset=0):
     """ will do and return according to date:
         - if date is today: checks if today's and tomorrow's schedule 
             for requesting user are up to date; if check returns false,
@@ -601,9 +605,24 @@ def handle_schedule_for(requested_date):
     headers = {
         "Content-Type": "application/json"
     }
+    
+    print(f"this is hour offset: {int(hours_offset)}")
     # grab user from request
     auth_user = get_current_user()
-    today = datetime.today()
+    # turn datetime.today() to a today valid for requesting user, based
+    # on hours_offset sent in url
+    utc_today = datetime.now(timezone.utc)
+    hours = int(hours_offset)
+    if hours < 0:
+        today = utc_today - timedelta(hours=abs(hours))
+    else:
+        today = utc_today + timedelta(hours=abs(hours))
+
+    print(f"this is today: {today}")
+
+    # today = datetime.today()
+    
+    print(f"this is today: {today}")
     # check if url requested_date is valid date input
     try:
         # input is valid
@@ -619,10 +638,9 @@ def handle_schedule_for(requested_date):
         # check user ranking and determine days_ahead of requested_date
         # vs today
         days_ahead = date_to_schedule.date() - today.date()
+        print(f"this is date for today: {today}")
         # user is valid as in user's ranking is enough to watch days_ahead
         ranking_is_enough = True
-        print(f"user ranking is: {auth_user.ranking}")
-        print(f"days_ahead = {days_ahead}")
         if auth_user.ranking == UserRanking.STARTER:
             if not days_ahead.days < 1:
                 # starter's ranking not enough
@@ -659,7 +677,6 @@ def handle_schedule_for(requested_date):
                 }
                 status_code = 400
 
-        
         else:
             response_body = {
                 "result": "Not reading ranking right"
@@ -678,9 +695,11 @@ def handle_schedule_for(requested_date):
                 for task in user_tasks:
                     if not task.check_plan_for(today):
                         # update today's plan for this task
+                        print("planning for today")
                         task.plan_day(today)
                     if not task.check_plan_for(today + timedelta(days=1)):
                         # update tomorrow's plan for this task
+                        print("planning for tomorrow")
                         task.plan_day(today + timedelta(days=1))
 
                 # now, if date_to_schedule is today, we respond with
@@ -698,9 +717,18 @@ def handle_schedule_for(requested_date):
                         PlannedTask.planned_date == today.date() + timedelta(days=1)
                     ).all()
                 
-                response_body = []
+                response_body = {}
+                date_specs = get_date_specs(date_to_schedule)
+                # build dahsboardDay object
+                response_body["year"] = date_specs["year"]
+                response_body["month"] = date_specs["month"]
+                response_body["day"] = date_specs["day"]
+                response_body["dayName"] = date_specs["day_name"]
+                response_body["dayOrder"] = date_specs["day_order"]
+                response_body["weekNumber"] = date_specs["week_number"]
+                response_body["plannedTasks"] = []
                 for planned_task in planned_tasks:
-                    response_body.append(planned_task.serialize())
+                    response_body["plannedTasks"].append(planned_task.serialize())
 
             elif days_ahead < timedelta(days=0):
                 # date_to_schedule is a day before today; not
@@ -719,21 +747,18 @@ def handle_schedule_for(requested_date):
                 }
                 status_code = 200
 
-
     else:
         # date input in url is invalid
         response_body = {
             "result": "HTTP_404_NOT_FOUND. invalid date requested..."
         }
         status_code = 404
-    
+
     return make_response (
         json.dumps(response_body),
         status_code,
         headers
     )
-
-
 
 # this only runs if `$ python src/main.py` is executed
 if __name__ == '__main__':
