@@ -121,3 +121,15 @@ def get_date_specs(datetime_object):
         "day_order": current_days,
         "day_name": datetime_object.strftime("%A")
     }
+
+def list_value_to_digits(number):
+        """ return a list with value number as digits """
+        value_string = str(number)
+        digits_list = []
+        if len(value_string) == 1:
+            digits_list.append(0)
+        if len(value_string) > 2:
+            value_string = "99"
+        for digit in value_string:
+            digits_list.append(int(digit))
+        return digits_list

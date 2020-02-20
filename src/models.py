@@ -10,25 +10,24 @@ import uuid
 from base64 import b64encode
 from dateutil.parser import parse
 from dateutil.relativedelta import relativedelta
-from utils import parse_tintrack_time_of_day, get_date_specs
+from utils import parse_tintrack_time_of_day, get_date_specs, list_value_to_digits
 
 db = SQLAlchemy()
 
 class TargetPeriod(enum.Enum):
-    DAILY = "Daily"
-    WEEKLY = "Weekly"
-    MONTHLY = "Monthly"
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
 
 class PlannedTaskStatus(enum.Enum):
-    PENDING = "Pending"
-    MISSED = "Missed"
-    DONE = "Done"
+    PENDING = "pending"
+    DONE = "done"
 
 class UserRanking(enum.Enum):
-    STARTER = "Starter"
-    ENROLLED = "Enrolled"
-    EXPERIENCED = "Experienced"
-    VETERAN = "Veteran"
+    STARTER = "starter"
+    ENROLLED = "enrolled"
+    EXPERIENCED = "experienced"
+    VETERAN = "veteran"
 
 class TinBase(db.Model):
     __abstract__ = True
@@ -45,7 +44,7 @@ class User(TinBase):
     date_of_birth = db.Column(db.Date, nullable=False)
     password_hash = db.Column(db.String(250), nullable=False, default="default")
     user_salt = db.Column(db.String(120), nullable=False)
-    ranking = db.Column(db.Enum(UserRanking), nullable=False, default="Starter")
+    ranking = db.Column(db.Enum(UserRanking), nullable=False, default="starter")
     tasks = db.relationship("Task", backref="user", cascade="all, delete-orphan", passive_deletes=True)
     habits = db.relationship("Habit", backref="user", cascade="all, delete-orphan", passive_deletes=True)
 
@@ -132,7 +131,7 @@ class Task(Activity):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
     planned_tasks = db.relationship("PlannedTask", backref="task", cascade="all, delete-orphan", passive_deletes=True)
     week_schedules = db.relationship("WeekSchedule", backref="task", cascade="all, delete-orphan", passive_deletes=True)
-    kpis = db.relationship("TaskKpi", backref="task", cascade="all, delete-orphan", passive_deletes=True)
+    kpi = db.relationship("TaskKpi", backref="task", cascade="all, delete-orphan", passive_deletes=True, uselist=False)
 
     def __init__(self, name, personal_message, duration_estimate, icon_name, user_id):
         self.duration_estimate = duration_estimate
@@ -190,6 +189,15 @@ class Task(Activity):
             if not new_week_sched:
                 print("did not receive created weeksched")
                 return None
+        # create kpi object
+        new_kpi_object = TaskKpi(new_task.id)
+        db.session.add(new_kpi_object)
+        try:
+            db.session.commit()
+        except:
+            print("something failed creating task_kpi")
+            db.session.rollback()
+            return None
         
         return new_task
 
@@ -325,14 +333,66 @@ class Task(Activity):
             # return list
             return planned_tasks
 
+    def get_kpis_for(self, datetime_object):
+        """ returns a list of dictionaries with:
+            - current_streak: times in a row a planned task is done in a list of
+                planned tasks with planned_datetime < datetime_object, ordered from
+                present to past
+            - longest_streak: as recorded on task_kpi object
+            - average: times planned tasks are done over all of them, in % format
+        """
+        current_streak = self.get_streak_up_to(datetime_object)
+        longest_streak = self.kpi.longest_streak
+        average = self.get_average_up_to(datetime_object)
+        return [
+            {
+                "legend": "streak",
+                "numbers":  list_value_to_digits(current_streak)
+            },
+            {
+                "legend": "longest",
+                "numbers": list_value_to_digits(longest_streak)
+            },
+            {
+                "legend": "avg %",
+                "numbers": list_value_to_digits(average)
+            }
+        ]
+        
+    def get_streak_up_to(self, datetime_object):
+        """" returns times in a row a planned task was done from datetime_object to the past """
+        planned_tasks = PlannedTask.query.filter(
+            PlannedTask.planned_datetime < datetime_object
+        ).order_by(PlannedTask.planned_datetime.desc()).all()
+        # check if task is done and add to streak
+        streak = 0
+        for planned_task in planned_tasks:
+            if planned_task.status == PlannedTaskStatus.DONE:
+                streak += 1
+            else:
+                break
+        return streak
+
+    def get_average_up_to(self, datetime_object):
+        """ returns average done/all from datetime_object to the past """
+        done_planned_tasks = PlannedTask.query.filter(
+            db.and_(
+                PlannedTask.planned_datetime < datetime_object,
+                PlannedTask.status == PlannedTaskStatus.DONE
+            )
+        ).all()
+        planned_tasks = PlannedTask.query.all()
+        current_average = len(done_planned_tasks) / len(planned_tasks)
+        return int(100 * current_average) 
+
 class TaskKpi(TinBase):
     """ a task key process indicators:
         current_streak: times in a row a planned task has been marked as 'done'
         longest_streak: holds highest value current_streak has ever reached for this task
     """
     id = db.Column(db.Integer, primary_key=True)
-    current_streak = db.Column(db.Integer, nullable=False, default=0)
     longest_streak = db.Column(db.Integer, nullable=False, default=0)
+    best_average = db.Column(db.Float, nullable=False, default=0)
     task_id = db.Column(db.Integer, db.ForeignKey("task.id", ondelete="CASCADE"), nullable=False)
 
     def __init__(self, task_id):
@@ -412,7 +472,7 @@ class PlannedTask(TinBase):
     # duration is registered in seconds
     duration_estimate = db.Column(db.Integer, nullable=False)
     registered_duration = db.Column(db.Integer, nullable=False, default=0)
-    status = db.Column(db.Enum(PlannedTaskStatus), nullable=False, default="Pending")
+    status = db.Column(db.Enum(PlannedTaskStatus), nullable=False, default="pending")
     marked_done_at = db.Column(db.DateTime)
     signature = db.Column(db.String(100), nullable=False)
     task_id = db.Column(db.Integer, db.ForeignKey("task.id", ondelete="CASCADE"), nullable=False)
@@ -428,7 +488,7 @@ class PlannedTask(TinBase):
         self.signature = signature
         self.task_id = task_id
     
-    def serialize(self):
+    def serialize(self, kpi_datetime):
         """ return a planned task dict as expected by front end client """
         return {
             "id": self.id,
@@ -440,7 +500,8 @@ class PlannedTask(TinBase):
             "personalMessage": self.task.personal_message,
             "prevActivity": self.previous_activity,
             "nextActivity": self.next_activity,
-            "duration": self.registered_duration
+            "duration": self.registered_duration,
+            "kpiValues": self.task.get_kpis_for(kpi_datetime)
         }
 
 class HabitCounter(TinBase):

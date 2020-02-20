@@ -727,8 +727,9 @@ def handle_schedule_for(requested_date, hours_offset=0):
                 response_body["dayOrder"] = date_specs["day_order"]
                 response_body["weekNumber"] = date_specs["week_number"]
                 response_body["plannedTasks"] = []
+                today_start = datetime(year=today.year, month=today.month, day=today.day, hour=0, minute=0, second=0)
                 for planned_task in planned_tasks:
-                    response_body["plannedTasks"].append(planned_task.serialize())
+                    response_body["plannedTasks"].append(planned_task.serialize(today_start))
 
             elif days_ahead < timedelta(days=0):
                 # date_to_schedule is a day before today; not
