@@ -758,6 +758,12 @@ def handle_schedule_for(requested_date, hours_offset=0):
                 # date_to_schedule is a day before today; not
                 # creating anything, just query and respond
 
+                # for each habit we grab habit counters on date_to_schedule
+                habit_counters = []
+                for habit in user_habits:
+                    habit_counters += HabitCounter.query.filter(
+                        HabitCounter.date_for_count == date_to_schedule.date()
+                    ).filter_by(habit_id=habit.id).all()
                 # for each task we grab planned tasks on date_to_schedule
                 planned_tasks = []
                 for task in user_tasks:
@@ -766,7 +772,9 @@ def handle_schedule_for(requested_date, hours_offset=0):
                     ).filter_by(task_id=task.id).all()
                 
                 # complete dashboardDay object in response, adding
-                # planned tasks to respond with
+                # planned tasks and habit counters to respond with
+                for habit_counter in habit_counters:
+                    response_body["habitCounters"].append(habit_counter.serialize())
                 for planned_task in planned_tasks:
                     response_body["plannedTasks"].append(planned_task.serialize(planned_task.planned_datetime))
                 status_code = 200
@@ -775,13 +783,19 @@ def handle_schedule_for(requested_date, hours_offset=0):
                 # date_to_schedule is the day after tomorrow
                 # not creating any planned_task, not checking,
                 # only projecting...
+                projected_habits = []
+                for habit in user_habits:
+                    projected_habits.append(habit.counter_for(date_to_schedule, True))
                 projected_tasks = []
                 for task in user_tasks:
                     projected_tasks += task.plan_day(date_to_schedule, True)
 
                 # complete dashboardDay object in response, adding
-                # prijected tasks as planned tasks to respond with
+                # projected tasks as planned tasks to respond with
+                # and projected habit counters as counters to respond with
                 today_start = datetime(year=today.year, month=today.month, day=today.day, hour=0, minute=0, second=0)
+                for projected_habit in projected_habits:
+                    response_body["habitCounters"].append(projected_habit.projectize(today_start))
                 for projected_task in projected_tasks:
                     response_body["plannedTasks"].append(projected_task.projectize(today_start, projected_task.task_id))
                 status_code = 200
