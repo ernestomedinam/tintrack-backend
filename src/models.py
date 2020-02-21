@@ -30,8 +30,8 @@ class UserRanking(enum.Enum):
     VETERAN = "veteran"
 
 class CountStatus(enum.Enum):
-    UNDER = "under",
-    AROUND = "around",
+    UNDER = "under"
+    AROUND = "around"
     OVER = "over"
 
 class TinBase(db.Model):
@@ -635,6 +635,8 @@ class HabitCounter(TinBase):
     def serialize(self):
         """ return habit counter as dict required by front end client """
         status_and_kpi = self.get_kpi()
+        print(status_and_kpi)
+        print(f"this is status: {status_and_kpi['status']}")
         return {
             "id": self.id,
             "toBeEnforced": self.habit.to_be_enforced,

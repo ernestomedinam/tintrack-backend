@@ -13,7 +13,7 @@ from utils import (
     APIException, generate_sitemap, validate_email_syntax,
     get_date_specs
 )
-from models import db, User, Habit, Task, UserRanking, PlannedTask
+from models import db, User, Habit, Task, UserRanking, PlannedTask, HabitCounter
 from sqlalchemy import and_
 from sqlalchemy.exc import IntegrityError
 from flask_jwt_extended import (
@@ -681,6 +681,8 @@ def handle_schedule_for(requested_date, hours_offset=0):
             # check if day is today, tomorrow, past or far future
             # grab user tasks
             user_tasks = Task.query.filter_by(user_id=auth_user.id).all()
+            # grab user habits
+            user_habits = Habit.query.filter_by(user_id=auth_user.id).all()
 
             # build dahsboardDay object in response; as it's based on date_to_schedule
             # it's good for all responses
@@ -693,10 +695,16 @@ def handle_schedule_for(requested_date, hours_offset=0):
             response_body["dayOrder"] = date_specs["day_order"]
             response_body["weekNumber"] = date_specs["week_number"]
             response_body["plannedTasks"] = []
+            response_body["habitCounters"] = []
             
             if days_ahead == timedelta(days=0) or days_ahead == timedelta(days=1):
                 # date_to_schedule is today or tomorrow; check
                 # both days and update if not up to date
+
+                # for each habit now we check today's and tomorrow's counter
+                for habit in user_habits:
+                    habit.fix_counter_for(today)
+                    habit.fix_counter_for(today + timedelta(days=1))
 
                 # for each task now we check today's and tomorrow's plan
                 for task in user_tasks:
@@ -713,7 +721,13 @@ def handle_schedule_for(requested_date, hours_offset=0):
                 # today's planned_tasks
                 status_code = 200
                 planned_tasks = []
+                habit_counters = []
                 if days_ahead == timedelta(days=0):    
+                    # grab user habit counters for today
+                    for habit in user_habits:
+                        habit_counters += HabitCounter.query.filter(
+                            HabitCounter.date_for_count == today.date()
+                        ).filter_by(habit_id=habit.id).all()
                     # grab user planned tasks for today
                     for task in user_tasks:
                         planned_tasks += PlannedTask.query.filter(
@@ -721,6 +735,11 @@ def handle_schedule_for(requested_date, hours_offset=0):
                         ).filter_by(task_id=task.id).all()
                     
                 else:
+                    # grab user habit counters for tomorrow
+                    for habit in user_habits:
+                        habit_counters += HabitCounter.query.filter(
+                            HabitCounter.date_for_count == today.date() + timedelta(days=1)
+                        ).filter_by(habit_id=habit.id).all()
                     # grab user planned tasks for tomorrow
                     for task in user_tasks:
                         planned_tasks = PlannedTask.query.filter(
@@ -728,8 +747,10 @@ def handle_schedule_for(requested_date, hours_offset=0):
                         ).filter_by(task_id=task.id).all()
                 
                 # complete dashboardDay object in response, adding
-                # planned tasks to respond with
+                # planned tasks and habit counters to respond with
                 today_start = datetime(year=today.year, month=today.month, day=today.day, hour=0, minute=0, second=0)
+                for habit_counter in habit_counters:
+                    response_body["habitCounters"].append(habit_counter.serialize())
                 for planned_task in planned_tasks:
                     response_body["plannedTasks"].append(planned_task.serialize(today_start))
 
