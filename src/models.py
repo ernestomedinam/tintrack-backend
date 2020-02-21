@@ -29,6 +29,11 @@ class UserRanking(enum.Enum):
     EXPERIENCED = "experienced"
     VETERAN = "veteran"
 
+class CountStatus(enum.Enum):
+    UNDER = "under",
+    AROUND = "around",
+    OVER = "over"
+
 class TinBase(db.Model):
     __abstract__ = True
     __table_args__ = {
@@ -464,19 +469,62 @@ class Habit(Activity):
             exists but is out of date (signature missmatch) it gets updated.
             this method should only be used on date_to_check >= today...
         """
-        pass
+        # grab habit counter for this habit on date_to_check
+        habit_counter = HabitCounter.query.filter(
+            HabitCounter.date_for_count == date_to_check.date()
+        ).filter_by(habit_id=self.id).one_or_none()
+        if not habit_counter:
+            # if habit_counter does not exist, it is created
+            habit_counter = self.counter_for(date_to_check)
 
-    def counter_for(self, date_to_plan):
-        """ creates and commits to db a new habit_counter object """
-        pass
+        else:
+            # otherwise, it is checked
+            if not habit_counter.signature == self.signature:
+                # habit counter is not up to date
+                habit_counter.sign_latest()
+        
+        return habit_counter
+
+    def counter_for(self, date_to_plan, projection=False):
+        """ creates and commits to db a new habit_counter object;
+            when projection True, returns object wihtout commiting to db
+        """
+        # create new habit counter
+        new_habit_counter = HabitCounter(
+            date_to_plan, self.get_daily_target(),
+            self.signature, self.id
+        )
+
+        if not projection:
+            # try to commit created habit_counter
+            db.session.add(new_habit_counter)
+            try:
+                db.session.commit()
+                return new_habit_counter
+            except:
+                db.session.rollback()
+                print("something went wrong when commiting new habit counter")
+                return None
+        else:
+            return new_habit_counter
 
     def get_daily_target(self):
         """ return a float value that represents daily target based on 
             target_period and target_value. this methos is used to store
             daily_target for habit_counters.
         """
-        pass
+        # check self.target_period
+        if self.target_period == TargetPeriod.MONTHLY:
+            # fix daily target accordingly
+            target = self.target_value / 28
+        elif self.target_period == TargetPeriod.WEEKLY:
+            # fix daily turning week to day
+            target = self.target_value / 7
+        else:
+            # it's daily
+            target = self.target_value
 
+        return target
 
 class PlannedTask(TinBase):
     """ a planned task is the ocurence, planned or as a record, of a task
@@ -570,7 +618,7 @@ class HabitCounter(TinBase):
     id = db.Column(db.Integer, primary_key=True)
     date_for_count = db.Column(db.Date, nullable=False)
     count = db.Column(db.Integer, default=0, nullable=False)
-    daily_target = db.Column(db.Integer, nullable=False)
+    daily_target = db.Column(db.Float, nullable=False)
     signature = db.Column(db.String(100), nullable=False)
     habit_id = db.Column(db.Integer, db.ForeignKey("habit.id", ondelete="CASCADE"), nullable=False)
     previous_activity = db.Column(db.String(120), default="")
@@ -586,18 +634,61 @@ class HabitCounter(TinBase):
 
     def serialize(self):
         """ return habit counter as dict required by front end client """
-        pass
+        status_and_kpi = self.get_kpi()
+        return {
+            "id": self.id,
+            "toBeEnforced": self.habit.to_be_enforced,
+            "name": self.habit.name,
+            "status": status_and_kpi["status"],
+            "iconName": self.habit.icon_name,
+            "personalMessage": self.habit.personal_message,
+            "kpiValues": status_and_kpi["kpiValues"]
+        }
     
-    def projectize(self):
+    def projectize(self, date_for_kpi):
         """ return non existent habit counter as dict required by front end client """
-        pass 
+        # grab related habit and habit_counter for kpi
+        try:
+            related_habit = Habit.query.filter_by(id=self.habit_id).one_or_none()
+            habit_counter_for_kpi = HabitCounter.query.filter(
+                HabitCounter.date_for_count == date_for_kpi.date()
+            ).filter_by(habit_id=self.habit_id).one_or_none()
+        except:
+            print("there are two habits or habit counters with the same id, wtf!")
+            return None
+
+        if related_habit and habit_counter_for_kpi:
+            # return dictionary for projected habit_counter
+            status_and_kpi = habit_counter_for_kpi.get_kpi()
+            return {
+                "id": uuid.uuid4().hex,
+                "toBeEnforced": related_habit.to_be_enforced,
+                "name": related_habit.name,
+                "status": status_and_kpi["status"],
+                "iconName": related_habit.icon_name,
+                "personalMessage": related_habit.personal_message,
+                "kpiValues": status_and_kpi["kpiValues"]
+            }
+        else:
+            print("we did not find such habit or habit counter, wait what?")
+            return None
 
     def sign_latest(self):
         """ updates habit_counter to latest habit version and gets signed """
-        pass
+        # get latest daily_target value
+        self.daily_target = self.habit.get_daily_target()
+        # get latest signature
+        self.signature = self.habit.signature
+        # try to commit 
+        try:
+            db.session.commit()
+        except:
+            print("something went wrong commiting updated habit")    
+            db.session.rollback()
 
     def get_kpi(self):
-        """ returns a list of dictionaries:
+        """ returns a dictionary with a status key and a list of dictionaries for kpiValues key:
+            - status: over, around or under, according to current value and target value
             - current_period: legend according to current target_period on habit from habit_id; 'month', 'week' or 'today'.
                 'numbers' is a list of digits for current_value, which represents the sum of habitCounters count for this
                 period (this month for month, this week for week, today for today)
@@ -606,7 +697,84 @@ class HabitCounter(TinBase):
                 and last 14 days before that; for 'today', lately is last 7 days.
             - target_period: legent is 'target'; value comes from self.daily_target * 28 || 7 || 1, for 'month', 'week', 'today'
         """
-        pass
+        # grab habit_counters for this habit up to 56 days
+        # before self.date_for_count
+        past_counters = HabitCounter.query.filter(
+            db.and_(
+                HabitCounter.date_for_count < self.date_for_count,
+                HabitCounter.date_for_count >= self.date_for_count - timedelta(days=56)
+            ) 
+        ).all()
+        # prepare dictionaries and kpi_list
+        dictionary_to_return = {}
+        kpi_list = []
+        lately_period = { "legend": "lately" }
+        target_period = { "legend": "target" }
+
+        # now check target_period for self.task, in order to 
+        # correctly build kpi objects
+        if self.habit.target_period == TargetPeriod.MONTHLY:
+            current_period = { "legend": "month" }
+            days_current = timedelta(days=28)
+            days_lately = timedelta(days=56)
+            times_target = 28
+        elif self.habit.target_period == TargetPeriod.WEEKLY:
+            current_period = { "legend": "week" }
+            days_current = timedelta(days=14)
+            days_lately = timedelta(days=28)
+            times_target = 7 
+        else:
+            current_period = { "legend": "today" }
+            days_current = timedelta(days=7)
+            days_lately = timedelta(days=14)
+            times_target = 1
+
+        # prepare current_counters, lately_counters and target_value       
+        current_counters = filter(
+            lambda counter: counter.date_for_count >= self.date_for_count - days_current,
+            past_counters
+        )
+        lately_counters = filter(
+            lambda counter: counter.date_for_count >= self.date_for_count - days_lately,
+            past_counters
+        )
+        target_value = int(self.daily_target * times_target)
+
+        # count counters!
+        current_value = 0
+        lately_value = 0
+        # count for current
+        for counter in current_counters:
+            current_value += counter.count
+        # count for lately
+        for counter in lately_counters:
+            lately_value += counter.count
+
+        # prepare dictionary and calculate status
+        if current_value <= target_value:
+            # current is under target
+            if current_value <= int(target_value * 0.8):
+                # current is 'safely' away, under 80%
+                status_value = CountStatus.UNDER.value
+            else:
+                # current is too close to limit
+                status_value = CountStatus.AROUND.value
+        else:
+            # current is over target
+            status_value = CountStatus.OVER.value
+        dictionary_to_return["status"] = status_value
+
+
+        # prepare kpi list
+        current_period["numbers"] = list_value_to_digits(current_value)
+        lately_period["numbers"] = list_value_to_digits(lately_value)
+        target_period["numbers"] = list_value_to_digits(target_value)
+        kpi_list.append(current_period)
+        kpi_list.append(lately_period)
+        kpi_list.append(target_period)
+        dictionary_to_return["kpiValues"] = kpi_list
+
+        return dictionary_to_return
 
 class WeekSchedule(TinBase):
     id = db.Column(db.Integer, primary_key=True)
