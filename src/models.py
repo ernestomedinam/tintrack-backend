@@ -1,6 +1,6 @@
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 import enum
 import string
 import os
@@ -50,6 +50,7 @@ class User(TinBase):
     password_hash = db.Column(db.String(250), nullable=False, default="default")
     user_salt = db.Column(db.String(120), nullable=False)
     ranking = db.Column(db.Enum(UserRanking), nullable=False, default="starter")
+    member_since = db.Column(db.DateTime, nullable=False, default="")
     tasks = db.relationship("Task", backref="user", cascade="all, delete-orphan", passive_deletes=True)
     habits = db.relationship("Habit", backref="user", cascade="all, delete-orphan", passive_deletes=True)
 
@@ -57,6 +58,7 @@ class User(TinBase):
         if name:
             self.name = string.capwords(name)
         self.email = email.lower()
+        self.member_since = datetime.now(timezone.utc)
         self.user_salt = b64encode(os.urandom(32)).decode("utf-8")
 
     def set_password(self, password):
@@ -118,13 +120,14 @@ class Activity(TinBase):
     def __init__(self, name, personal_message):
         self.name = name.strip()
         self.personal_message = personal_message.strip()
-        self.last_edited_at = datetime.now()
+        self.last_edited_at = datetime.now(timezone.utc)
         self.signature = uuid.uuid4().hex
 
     def update(self, name, personal_message):
         self.name = name
         self.personal_message = personal_message
         self.signature = uuid.uuid4().hex
+        self.last_edited_at = datetime.now(timezone.utc)
 
 class Task(Activity):
     """ a task is a periodic activity that takes place in specific times
@@ -215,6 +218,7 @@ class Task(Activity):
             "personalMessage": self.personal_message,
             "durationEstimate": self.duration_estimate,
             "iconName": self.icon_name,
+            "signature": self.signature,
             "weekSched": [week_schedule.serialize() for week_schedule in self.week_schedules]
         }
 
@@ -433,6 +437,7 @@ class Habit(Activity):
             "name": self.name,
             "iconName": self.icon_name,
             "personalMessage": self.personal_message,
+            "signature": self.signature,
             "targetPeriod": self.target_period.value,
             "targetValues": self.list_target_value_digits()
         }
@@ -644,6 +649,7 @@ class HabitCounter(TinBase):
             "status": status_and_kpi["status"],
             "iconName": self.habit.icon_name,
             "personalMessage": self.habit.personal_message,
+            "signature": self.signature,
             "kpiValues": status_and_kpi["kpiValues"]
         }
     
@@ -662,6 +668,7 @@ class HabitCounter(TinBase):
         if related_habit and habit_counter_for_kpi:
             # return dictionary for projected habit_counter
             status_and_kpi = habit_counter_for_kpi.get_kpi()
+            status_and_kpi["kpiValues"][0]["numbers"] = [0, 0]
             return {
                 "id": uuid.uuid4().hex,
                 "toBeEnforced": related_habit.to_be_enforced,
@@ -669,6 +676,7 @@ class HabitCounter(TinBase):
                 "status": status_and_kpi["status"],
                 "iconName": related_habit.icon_name,
                 "personalMessage": related_habit.personal_message,
+                "signature": related_habit.signature,
                 "kpiValues": status_and_kpi["kpiValues"]
             }
         else:

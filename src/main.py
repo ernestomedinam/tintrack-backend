@@ -247,7 +247,9 @@ def handle_me_query():
     response_body = {
         "name": token_user.name,
         "email": token_user.email,
-        "is_authenticated": True
+        "ranking": token_user.ranking.value,
+        "memberSince": token_user.member_since.strftime("%Y-%m-%d"),
+        "isAuthenticated": True
     }
     status_code = 200
     return make_response(
@@ -552,20 +554,18 @@ def handle_tasks(task_id=None):
             task_to_delete = Task.query.filter_by(id=task_id).one_or_none()
             if task_to_delete:    
                 db.session.delete(task_to_delete)
-                db.session.commit()
-                status_code = 204
-                response_body = {}
-                # try:
-                #     db.session.commit()
-                #     status_code = 204
-                #     response_body = {}
-                # except:
-                #     db.session.rollback()
-                #     print("could not delete on db")
-                #     status_code = 500
-                #     response_body = {
-                #         "result": "HTTP_500_INTERNAL_SERVER_ERROR. we suck at db admin..."
-                #     }
+                # try to commit changes to db
+                try:
+                    db.session.commit()
+                    status_code = 204
+                    response_body = {}
+                except:
+                    db.session.rollback()
+                    print("could not delete on db")
+                    status_code = 500
+                    response_body = {
+                        "result": "HTTP_500_INTERNAL_SERVER_ERROR. we suck at db admin..."
+                    }
             else:
                 status_code = 404
                 response_body = {
