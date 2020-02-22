@@ -168,7 +168,7 @@ def clean_expired_tokens():
     prune_database()
 
 # user login endpoint
-@app.route("/auth/login", methods=["POST"])
+@app.route("/api/login", methods=["POST"])
 def handle_user_login():
     headers = {
             "Content-Type": "application/json"

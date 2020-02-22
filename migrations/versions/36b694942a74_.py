@@ -1,8 +1,8 @@
 """empty message
 
-Revision ID: 287184c5476c
+Revision ID: 36b694942a74
 Revises: 
-Create Date: 2020-02-17 22:22:32.793361
+Create Date: 2020-02-22 14:46:19.337520
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '287184c5476c'
+revision = '36b694942a74'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -35,6 +35,7 @@ def upgrade():
     sa.Column('password_hash', sa.String(length=250), nullable=False),
     sa.Column('user_salt', sa.String(length=120), nullable=False),
     sa.Column('ranking', sa.Enum('STARTER', 'ENROLLED', 'EXPERIENCED', 'VETERAN', name='userranking'), nullable=False),
+    sa.Column('member_since', sa.DateTime(), nullable=False),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('email'),
     mysql_engine='InnoDB'
@@ -42,6 +43,7 @@ def upgrade():
     op.create_table('habit',
     sa.Column('name', sa.String(length=120), nullable=False),
     sa.Column('personal_message', sa.String(length=250), nullable=False),
+    sa.Column('signature', sa.String(length=100), nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('last_edited_at', sa.DateTime(), nullable=False),
     sa.Column('id', sa.Integer(), nullable=False),
@@ -57,12 +59,12 @@ def upgrade():
     op.create_table('task',
     sa.Column('name', sa.String(length=120), nullable=False),
     sa.Column('personal_message', sa.String(length=250), nullable=False),
+    sa.Column('signature', sa.String(length=100), nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('last_edited_at', sa.DateTime(), nullable=False),
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('duration_estimate', sa.Integer(), nullable=False),
     sa.Column('icon_name', sa.String(length=50), nullable=False),
-    sa.Column('signature', sa.String(length=100), nullable=False),
     sa.Column('user_id', sa.Integer(), nullable=False),
     sa.ForeignKeyConstraint(['user_id'], ['user.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
@@ -72,7 +74,8 @@ def upgrade():
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('date_for_count', sa.Date(), nullable=False),
     sa.Column('count', sa.Integer(), nullable=False),
-    sa.Column('daily_target', sa.Integer(), nullable=False),
+    sa.Column('daily_target', sa.Float(), nullable=False),
+    sa.Column('signature', sa.String(length=100), nullable=False),
     sa.Column('habit_id', sa.Integer(), nullable=False),
     sa.Column('previous_activity', sa.String(length=120), nullable=True),
     sa.Column('as_felt_before', sa.String(length=120), nullable=True),
@@ -88,8 +91,8 @@ def upgrade():
     sa.Column('planned_date', sa.Date(), nullable=False),
     sa.Column('is_any', sa.Boolean(), nullable=False),
     sa.Column('duration_estimate', sa.Integer(), nullable=False),
-    sa.Column('registered_duration', sa.Integer(), nullable=True),
-    sa.Column('status', sa.Enum('PENDING', 'MISSED', 'DONE', name='plannedtaskstatus'), nullable=False),
+    sa.Column('registered_duration', sa.Integer(), nullable=False),
+    sa.Column('status', sa.Enum('PENDING', 'DONE', name='plannedtaskstatus'), nullable=False),
     sa.Column('marked_done_at', sa.DateTime(), nullable=True),
     sa.Column('signature', sa.String(length=100), nullable=False),
     sa.Column('task_id', sa.Integer(), nullable=False),
@@ -103,8 +106,8 @@ def upgrade():
     )
     op.create_table('task_kpi',
     sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('current_streak', sa.Integer(), nullable=False),
     sa.Column('longest_streak', sa.Integer(), nullable=False),
+    sa.Column('best_average', sa.Float(), nullable=False),
     sa.Column('task_id', sa.Integer(), nullable=False),
     sa.ForeignKeyConstraint(['task_id'], ['task.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
