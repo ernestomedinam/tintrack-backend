@@ -224,12 +224,11 @@ class Task(Activity):
 
     def update(self, json_task):
         """ update task with validated input in json_task """
-        self.name = json_task["name"]
-        self.personal_message = json_task["personalMessage"]
         self.duration_estimate = int(json_task["durationEstimate"])
         self.icon_name = json_task["iconName"]
         for week_sched in self.week_schedules:
             week_sched.update(json_task["weekSched"][week_sched.week_number - 1])
+        super().update(json_task["name"], json_task["personalMessage"])
 
     def check_plan_for(self, date_to_check):
         """ checks whether planned tasks objects exist for this task

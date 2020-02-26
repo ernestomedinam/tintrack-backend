@@ -18,7 +18,7 @@ from sqlalchemy import and_
 from sqlalchemy.exc import IntegrityError
 from flask_jwt_extended import (
     JWTManager, jwt_required, create_access_token, set_access_cookies,
-    get_jwt_identity, get_current_user
+    get_jwt_identity, get_current_user, unset_jwt_cookies
 )
 from blacklist_helpers import (
     is_token_revoked, revoke_token, add_token_to_database, prune_database
@@ -45,7 +45,7 @@ app.config["JWT_COOKIE_CSRF_PROTECT"] = True
 
 MIGRATE = Migrate(app, db)
 db.init_app(app)
-CORS(app)
+CORS(app, supports_credentials=True)
 jwt = JWTManager(app)
 
 # jwt configs
@@ -179,36 +179,43 @@ def handle_user_login():
         login_input = request.json
         if set(("email", "password")).issubset(login_input):
             # user input has required keys
-            if validate_email_syntax(login_input["email"]):
-                # email sintax is valid
-                requesting_user = User.query.filter_by(email=login_input["email"]).first()
-                if requesting_user:
-                    if requesting_user.check_password(login_input["password"]):
-                        access_token = create_access_token(requesting_user)
-                        add_token_to_database(access_token, app.config["JWT_IDENTITY_CLAIM"])
-                        # refresh_token = create_refresh_token(requesting_user)
-                        # add_token_to_database(refresh_token, app.config["JWT_IDENTITY_CLAIM"])
-                        response_body = {
-                            "result": "HTTP_200_0K. user is verified, JWT cookies shoulda been sent..."
-                        }
-                        status_code = 200
-                        auth_response = make_response(
-                            json.dumps(response_body),
-                            status_code,
-                            headers
-                        )
-                        set_access_cookies(auth_response, access_token)
-                        return auth_response
-                        
+            if login_input["email"] and login_input["password"]:
+                print(f"data is {login_input['email']} {login_input['password']}")
+                if validate_email_syntax(login_input["email"]):
+                    # email sintax is valid
+                    requesting_user = User.query.filter_by(email=login_input["email"]).first()
+                    if requesting_user:
+                        if requesting_user.check_password(login_input["password"]):
+                            access_token = create_access_token(requesting_user)
+                            add_token_to_database(access_token, app.config["JWT_IDENTITY_CLAIM"])
+                            # refresh_token = create_refresh_token(requesting_user)
+                            # add_token_to_database(refresh_token, app.config["JWT_IDENTITY_CLAIM"])
+                            response_body = {
+                                "result": "HTTP_200_0K. user is verified, JWT cookies shoulda been sent..."
+                            }
+                            status_code = 200
+                            auth_response = make_response(
+                                json.dumps(response_body),
+                                status_code,
+                                headers
+                            )
+                            set_access_cookies(auth_response, access_token)
+                            return auth_response
+                            
+                        else:
+                            status_code = 401
+                            response_body = {
+                                "result": "HTTP_401_UNAUTHORIZED. bad credentials..."
+                            }
                     else:
-                        status_code = 401
+                        status_code = 404
                         response_body = {
                             "result": "HTTP_401_UNAUTHORIZED. bad credentials..."
                         }
                 else:
-                    status_code = 404
+                    status_code = 400
                     response_body = {
-                        "result": "HTTP_401_UNAUTHORIZED. bad credentials..."
+                        "result": "HTTP_400_BAD_REQUEST. empty credentials..."
                     }
             else:
                 status_code = 400
@@ -232,6 +239,23 @@ def handle_user_login():
         status_code,
         headers
     )
+
+@app.route("/api/logout", methods=["POST"])
+def handle_user_logout():
+    headers = {
+        "Content-Type": "application/json"
+    }
+    response_body = {
+        "result": "HTTP_200_0K. user logged out successfully"
+    }
+    status_code = 200
+    response = make_response(
+        json.dumps(response_body),
+        status_code,
+        headers
+    )
+    unset_jwt_cookies(response)
+    return response
 
 # user who am i? endpoint
 @app.route("/api/me", methods=["GET"])
@@ -742,7 +766,7 @@ def handle_schedule_for(requested_date, hours_offset=0):
                         ).filter_by(habit_id=habit.id).all()
                     # grab user planned tasks for tomorrow
                     for task in user_tasks:
-                        planned_tasks = PlannedTask.query.filter(
+                        planned_tasks += PlannedTask.query.filter(
                             PlannedTask.planned_date == today.date() + timedelta(days=1)
                         ).filter_by(task_id=task.id).all()
                 
