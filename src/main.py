@@ -608,7 +608,7 @@ def handle_tasks(task_id=None):
         headers
     )
 
-# schedules enpoint
+# schedules endpoint
 @app.route("/api/schedules/<requested_date>", methods=["GET"])
 @app.route("/api/schedules/<requested_date>/<hours_offset>", methods=["GET"])
 @jwt_required
@@ -831,6 +831,50 @@ def handle_schedule_for(requested_date, hours_offset=0):
         }
         status_code = 404
 
+    return make_response (
+        json.dumps(response_body),
+        status_code,
+        headers
+    )
+
+# habitCounters endpoint
+# @app.route("/api/habitCounters/", methods=["GET"])
+@app.route("/api/habitCounters/<habit_counter_id>", methods=["PATCH"])
+@jwt_required
+def handle_habit_counters(habit_counter_id):
+    """ 
+        allows for an authenticated user to patch a habit counter 
+        increasing it's count by one
+    """
+    headers = {
+        "Content-Type": "application/json"
+    }
+    # check if habit exists
+    habit_to_patch = HabitCounter.query.filter_by(id=habit_counter_id).one_or_none()
+    if habit_to_patch:
+        habit_to_patch.count += 1
+        # try to commit changes to db
+        try:
+            db.session.commit()
+            status_code = 200
+            response_body = {
+                "result": "HTTP_200_OK. count updated"
+            }
+
+        except:
+            print("something wrong when comitting habit counter with new count!")
+            status_code = 500
+            response_body = {
+                "result": "HTTP_500_INTERNAL_SERVER_ERROR. something went wrong on db, need to check..."
+            }
+
+    else:
+        print("oops, no such habit counter here...")
+        status_code = 404
+        response_body = {
+            "result": "HTTP_404_NOT_FOUND. oops, no such habit counter here..."
+        }
+    
     return make_response (
         json.dumps(response_body),
         status_code,

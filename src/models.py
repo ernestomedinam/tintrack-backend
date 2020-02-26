@@ -710,10 +710,10 @@ class HabitCounter(TinBase):
         # before self.date_for_count
         past_counters = HabitCounter.query.filter(
             db.and_(
-                HabitCounter.date_for_count < self.date_for_count,
+                HabitCounter.date_for_count <= self.date_for_count,
                 HabitCounter.date_for_count >= self.date_for_count - timedelta(days=56)
             ) 
-        ).all()
+        ).filter_by(habit_id=self.habit_id).all()
         # prepare dictionaries and kpi_list
         dictionary_to_return = {}
         kpi_list = []
@@ -724,27 +724,27 @@ class HabitCounter(TinBase):
         # correctly build kpi objects
         if self.habit.target_period == TargetPeriod.MONTHLY:
             current_period = { "legend": "month" }
-            days_current = timedelta(days=28)
+            days_current = timedelta(days=29)
             days_lately = timedelta(days=56)
             times_target = 28
         elif self.habit.target_period == TargetPeriod.WEEKLY:
             current_period = { "legend": "week" }
-            days_current = timedelta(days=14)
+            days_current = timedelta(days=15)
             days_lately = timedelta(days=28)
             times_target = 7 
         else:
             current_period = { "legend": "today" }
-            days_current = timedelta(days=7)
+            days_current = timedelta(days=1)
             days_lately = timedelta(days=14)
             times_target = 1
 
         # prepare current_counters, lately_counters and target_value       
         current_counters = filter(
-            lambda counter: counter.date_for_count >= self.date_for_count - days_current,
+            lambda counter: counter.date_for_count > self.date_for_count - days_current,
             past_counters
         )
         lately_counters = filter(
-            lambda counter: counter.date_for_count >= self.date_for_count - days_lately,
+            lambda counter: counter.date_for_count > self.date_for_count - days_lately,
             past_counters
         )
         target_value = int(self.daily_target * times_target)
