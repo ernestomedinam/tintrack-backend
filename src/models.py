@@ -444,10 +444,10 @@ class Habit(Activity):
     def update(self, json_data):
         name = json_data["name"].strip()
         personal_message = json_data["personalMessage"].strip()
-        to_be_enforced = json.loads(json_data["toBeEnforced"])
+        to_be_enforced = json_data["toBeEnforced"]
         icon_name = json_data["iconName"].strip()
         target_period = json_data["targetPeriod"].strip()
-        target_value = json.loads(json_data["targetValue"])
+        target_value = json_data["targetValue"]
         self.to_be_enforced = to_be_enforced
         if icon_name:
             self.icon_name = icon_name

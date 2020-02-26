@@ -318,9 +318,9 @@ def handle_habits(habit_id=None):
             new_habit_name = new_habit_data["name"]
             new_habit_message = new_habit_data["personalMessage"]
             new_habit_period = new_habit_data["targetPeriod"]
-            new_habit_value = json.loads(new_habit_data["targetValue"])
+            new_habit_value = new_habit_data["targetValue"]
             new_habit_icon = new_habit_data["iconName"]
-            new_habit_enforcement = json.loads(new_habit_data["toBeEnforced"])
+            new_habit_enforcement = new_habit_data["toBeEnforced"]
             if (
                 new_habit_name and new_habit_message and
                 new_habit_period and 0 < new_habit_value < 100 and
