@@ -839,7 +839,7 @@ def handle_schedule_for(requested_date, hours_offset=0):
 
 # habitCounters endpoint
 # @app.route("/api/habitCounters/", methods=["GET"])
-@app.route("/api/habitCounters/<habit_counter_id>", methods=["PATCH"])
+@app.route("/api/habit-counters/<habit_counter_id>", methods=["PATCH"])
 @jwt_required
 def handle_habit_counters(habit_counter_id):
     """ 
