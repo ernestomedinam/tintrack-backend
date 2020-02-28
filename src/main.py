@@ -13,7 +13,10 @@ from utils import (
     APIException, generate_sitemap, validate_email_syntax,
     get_date_specs
 )
-from models import db, User, Habit, Task, UserRanking, PlannedTask, HabitCounter
+from models import (
+    db, User, Habit, Task, UserRanking, PlannedTask, HabitCounter,
+    PlannedTaskStatus
+)
 from sqlalchemy import and_
 from sqlalchemy.exc import IntegrityError
 from flask_jwt_extended import (
@@ -838,8 +841,8 @@ def handle_schedule_for(requested_date, hours_offset=0):
     )
 
 # habitCounters endpoint
-# @app.route("/api/habitCounters/", methods=["GET"])
-@app.route("/api/habit-counters/<habit_counter_id>", methods=["PATCH"])
+# @app.route("/api/habit-counters/", methods=["GET"])
+@app.route("/api/habit-counters/<habit_counter_id>", methods=["POST"])
 @jwt_required
 def handle_habit_counters(habit_counter_id):
     """ 
@@ -849,37 +852,130 @@ def handle_habit_counters(habit_counter_id):
     headers = {
         "Content-Type": "application/json"
     }
-    # check if habit exists
-    habit_to_patch = HabitCounter.query.filter_by(id=habit_counter_id).one_or_none()
-    if habit_to_patch:
-        habit_to_patch.count += 1
-        # try to commit changes to db
-        try:
-            db.session.commit()
-            status_code = 200
-            response_body = {
-                "result": "HTTP_200_OK. count updated"
-            }
+    if request.method == "POST":
+        # check if habit exists
+        habit_to_patch = HabitCounter.query.filter_by(id=habit_counter_id).one_or_none()
+        if habit_to_patch:
+            introspective = request.json
+            if not "previousActivity" in introspective:
+                    introspective["previousActivity"] = ""
+            if not "nextActivity" in introspective:
+                introspective["nextActivity"] = ""
+            if set(("asFeltBefore", "asFeltAfterwards")).issubset(introspective):
+                if (
+                    int(introspective["asFeltBefore"]) > 0 and
+                    int(introspective["asFeltAfterwards"]) > 0
+                ):
+                    success = habit_to_patch.record_occurrence(introspective)
+                    if success:
+                        status_code = 200
+                        response_body = {
+                            "result": "HTTP_200_OK. count updated, habit introspective recorded"
+                        }
+                    else:
+                        status_code = 500
+                        response_body = {
+                            "result": "HTTP_500_INTERNAL_SERVER_ERROR. we seem to have spilled the soup!"
+                        }
+                else:
+                    # values are not valid
+                    status_code = 400
+                    response_body = {
+                        "result": "HTTP_400_BAD_REQUEST. we could not understand those feelings..."
+                    }
+            else:
+                # some key is missing
+                status_code = 400
+                response_body = {
+                    "result": "HTTP_400_BAD_REQUEST. check input, some key seems to be missing"
+                }
 
-        except:
-            print("something wrong when comitting habit counter with new count!")
-            status_code = 500
+        else:
+            # no such habit counter
+            print("oops, no such habit counter here...")
+            status_code = 404
             response_body = {
-                "result": "HTTP_500_INTERNAL_SERVER_ERROR. something went wrong on db, need to check..."
+                "result": "HTTP_404_NOT_FOUND. oops, no such habit counter in here..."
             }
-
-    else:
-        print("oops, no such habit counter here...")
-        status_code = 404
-        response_body = {
-            "result": "HTTP_404_NOT_FOUND. oops, no such habit counter here..."
-        }
     
     return make_response (
         json.dumps(response_body),
         status_code,
         headers
     )
+
+# planned tasks endpoint
+# @app.route("/api/planned-tasks/", method=["GET"])
+@app.route("/api/planned-tasks/<planned_task_id>", methods=["POST"])
+@jwt_required
+def handle_planned_tasks(planned_task_id):
+    """
+        POST method used to mark task as done and create
+        correspondent introspective object.
+    """
+    headers = {
+        "Content-Type": "application/json"
+    }
+    if request.method == "POST":
+        # verify planned task exists
+        planned_task = PlannedTask.query.filter_by(id=planned_task_id).one_or_none()
+        if planned_task:
+            # planned task exists check if status is done...
+            if planned_task.status == PlannedTaskStatus.DONE:
+                # this task is already done, who are you and what are you doing?
+                status_code = 400
+                response_body = {
+                    "result": "HTTP_400_BAD_REQUEST. this planned task was already marked as done!"
+                }
+            else:
+                # mark as done!
+                introspective = request.json
+                if not "previousActivity" in introspective:
+                    introspective["previousActivity"] = ""
+                if not "nextActivity" in introspective:
+                    introspective["nextActivity"] = ""
+                if set(("asFeltBefore", "asFeltAfterwards")).issubset(introspective):
+                    if (
+                        int(introspective["asFeltBefore"]) > 0 and
+                        int(introspective["asFeltAfterwards"]) > 0
+                    ):
+                        success = planned_task.mark_done(introspective)
+                        if success:
+                            # task marked as done, introspective created
+                            status_code = 200
+                            response_body = {
+                                "result": "HTTP_200_OK. task marked done successfully!"
+                            }
+                        else:
+                            status_code = 500
+                            response_body = {
+                                "result": "HTTP_500_INTERNAL_SERVER_ERROR. sorry, we seem to have messed up real bad..."
+                            }
+                    else:
+                        # values not valid
+                        status_code = 400
+                        response_body = {
+                            "result": "HTTP_400_BAD_REQUEST. feelings received were not understood..."
+                        }
+                else:
+                    # some key is missing!
+                    status_code = 400
+                    response_body = {
+                        "result": "HTTP_400_BAD_REQUEST. some key seems to be missing..."
+                    }
+
+        else:
+            # no such planned task
+            status_code = 404
+            response_body = {
+                "result": "HTTP_404_NOT_FOUND. oops, no such planned task in here..."
+            }
+
+        return make_response(
+            json.dumps(response_body),
+            status_code,
+            headers
+        )
 
 # this only runs if `$ python src/main.py` is executed
 if __name__ == '__main__':

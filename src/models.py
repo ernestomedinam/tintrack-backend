@@ -14,14 +14,17 @@ from utils import parse_tintrack_time_of_day, get_date_specs, list_value_to_digi
 
 db = SQLAlchemy()
 
+
 class TargetPeriod(enum.Enum):
     DAILY = "daily"
     WEEKLY = "weekly"
     MONTHLY = "monthly"
 
+
 class PlannedTaskStatus(enum.Enum):
     PENDING = "pending"
     DONE = "done"
+
 
 class UserRanking(enum.Enum):
     STARTER = "starter"
@@ -29,16 +32,27 @@ class UserRanking(enum.Enum):
     EXPERIENCED = "experienced"
     VETERAN = "veteran"
 
+
 class CountStatus(enum.Enum):
     UNDER = "under"
     AROUND = "around"
     OVER = "over"
+
+
+class Feeling(enum.Enum):
+    SADDER = 1
+    SAD = 2
+    INDIFFERENT = 3
+    HAPPY = 4
+    HAPPIER = 5
+
 
 class TinBase(db.Model):
     __abstract__ = True
     __table_args__ = {
         "mysql_engine": "InnoDB"
     }
+
 
 class User(TinBase):
     """ a tintrack user. each user has a personal salt to be mixed with
@@ -81,6 +95,7 @@ class User(TinBase):
         except ValueError:
             return False
 
+
 class TokenBlacklist(db.Model):
     """ access code tokens for users """
     id = db.Column(db.Integer, primary_key=True)
@@ -107,6 +122,7 @@ class TokenBlacklist(db.Model):
             "expires": self.expires
         }
 
+
 class Activity(TinBase):
     """ an activity that has a name and a reason to be included
         in someone's routine, as a habit or a task."""
@@ -128,6 +144,7 @@ class Activity(TinBase):
         self.personal_message = personal_message
         self.signature = uuid.uuid4().hex
         self.last_edited_at = datetime.now(timezone.utc)
+
 
 class Task(Activity):
     """ a task is a periodic activity that takes place in specific times
@@ -393,6 +410,7 @@ class Task(Activity):
         current_average = len(done_planned_tasks) / len(planned_tasks)
         return int(100 * current_average) 
 
+
 class TaskKpi(TinBase):
     """ a task key process indicators:
         current_streak: times in a row a planned task has been marked as 'done'
@@ -405,6 +423,7 @@ class TaskKpi(TinBase):
 
     def __init__(self, task_id):
         self.task_id = task_id
+
 
 class Habit(Activity):
     """ a habit is a recurrent activity without specific time requirements,
@@ -530,6 +549,7 @@ class Habit(Activity):
 
         return target
 
+
 class PlannedTask(TinBase):
     """ a planned task is the ocurence, planned or as a record, of a task
         on a specific time and date, even if sometimes it is 'any'. """
@@ -548,10 +568,10 @@ class PlannedTask(TinBase):
     marked_done_at = db.Column(db.DateTime)
     signature = db.Column(db.String(100), nullable=False)
     task_id = db.Column(db.Integer, db.ForeignKey("task.id", ondelete="CASCADE"), nullable=False)
-    previous_activity = db.Column(db.String(120), default="")
-    as_felt_before = db.Column(db.String(120), default="")
-    next_activity = db.Column(db.String(120), default="")
-    as_felt_afterwards = db.Column(db.String(120), default="")
+    # previous_activity = db.Column(db.String(120), default="")
+    # as_felt_before = db.Column(db.String(120), default="")
+    #next_activity = db.Column(db.String(120), default="")
+    # as_felt_afterwards = db.Column(db.String(120), default="")
 
     def __init__(self, planned_datetime, duration_estimate, signature, task_id):
         self.planned_datetime = planned_datetime
@@ -580,8 +600,6 @@ class PlannedTask(TinBase):
                 "name": task.name,
                 "iconName": task.icon_name,
                 "personalMessage": task.personal_message,
-                "prevActivity": "",
-                "nextActivity": "",
                 "duration": 0,
                 "signature": self.signature,
                 "isAny": is_any,
@@ -603,13 +621,41 @@ class PlannedTask(TinBase):
             "name": self.task.name,
             "iconName": self.task.icon_name,
             "personalMessage": self.task.personal_message,
-            "prevActivity": self.previous_activity,
-            "nextActivity": self.next_activity,
             "duration": self.registered_duration,
             "signature": self.signature,
             "isAny": self.is_any,
             "kpiValues": self.task.get_kpis_for(kpi_datetime)
         }
+
+    def mark_done(self, introspective):
+        """ marks task as done (changes status) and records a task
+            instrospective object: {
+                as_felt_before,
+                as_felt_afterwards,
+                previous_activity = ""
+                next_activity = ""
+            }.
+        """
+        self.status = PlannedTaskStatus.DONE
+        new_task_introspective = TaskIntrospective(
+            introspective["asFeltBefore"],
+            introspective["asFeltAfterwards"],
+            self.id
+        )
+        if introspective["previousActivity"]:
+            new_task_introspective.previous_activity = introspective["previousActivity"]
+        if introspective["nextActivity"]:
+            new_task_introspective.next_activity = introspective["nextActivity"]
+        db.session.add(new_task_introspective)
+        
+        # try to commit
+        try:
+            db.session.commit()
+            return True
+        except:
+            print("something went wrong marking planned task done or creating introspective...")
+            return False
+
 
 class HabitCounter(TinBase):
     """ a habit counter is a kind of planned task that takes place everyday and
@@ -625,10 +671,10 @@ class HabitCounter(TinBase):
     daily_target = db.Column(db.Float, nullable=False)
     signature = db.Column(db.String(100), nullable=False)
     habit_id = db.Column(db.Integer, db.ForeignKey("habit.id", ondelete="CASCADE"), nullable=False)
-    previous_activity = db.Column(db.String(120), default="")
-    as_felt_before = db.Column(db.String(120), default="")
-    next_activity = db.Column(db.String(120), default="")
-    as_felt_afterwards = db.Column(db.String(120), default="")
+    # previous_activity = db.Column(db.String(120), default="")
+    # as_felt_before = db.Column(db.String(120), default="")
+    # next_activity = db.Column(db.String(120), default="")
+    # as_felt_afterwards = db.Column(db.String(120), default="")
 
     def __init__(self, date_for_count, daily_target, signature, habit_id):
         self.date_for_count = date_for_count
@@ -784,6 +830,68 @@ class HabitCounter(TinBase):
         dictionary_to_return["kpiValues"] = kpi_list
 
         return dictionary_to_return
+
+    def record_occurrence(self, introspective):
+        """ adds 1 to habit counter count! also receives an 
+            introspective dictionary and creates a habit
+            introspective object
+        """
+        self.count += 1
+        new_habit_introspective = HabitIntrospective(
+            introspective["asFeltBefore"],
+            introspective["asFeltAfterwards"],
+            self.id
+        )
+        if introspective["previousActivity"]:
+            new_habit_introspective.previous_activity = introspective["previousActivity"]
+        if introspective["nextActivity"]:
+            new_habit_introspective.next_activity = introspective["nextActivity"]
+        db.session.add(new_habit_introspective)
+
+        # try to commit all changed to db
+        # try:
+        db.session.commit()
+        return True
+        #except:
+        #    print("something failed updating habit counter count or creating introspective...")
+        #    return False
+
+
+class Introspective(TinBase):
+    """ represents an auth user instrospective regarding a planned
+        task or a habit counter occurrence, based on activities and
+        feelings before and after.
+    """
+    __abstract__ = True
+    previous_activity = db.Column(db.String(100), default="")
+    next_activity = db.Column(db.String(100), default="")
+    as_felt_before = db.Column(db.Enum(Feeling), nullable=False)
+    as_felt_afterwards = db.Column(db.Enum(Feeling), nullable=False)
+
+    def __init__(self, as_felt_before, as_felt_afterwards):
+        self.as_felt_before = Feeling(as_felt_before)
+        self.as_felt_afterwards = Feeling(as_felt_afterwards)
+
+
+class TaskIntrospective(Introspective):
+    """ for planned tasks """
+    id = db.Column(db.Integer, primary_key=True)
+    planned_task_id = db.Column(db.Integer, db.ForeignKey("planned_task.id", ondelete="CASCADE"), nullable=False)
+
+    def __init__(self, as_felt_before, as_felt_afterwards, planned_task_id):
+        self.planned_task_id = planned_task_id
+        super().__init__(as_felt_before, as_felt_afterwards)
+
+
+class HabitIntrospective(Introspective):
+    """ for habit counters """
+    id = db.Column(db.Integer, primary_key=True)
+    habit_counter_id = db.Column(db.Integer, db.ForeignKey("habit_counter.id", ondelete="CASCADE"), nullable=False)
+
+    def __init__(self, as_felt_before, as_felt_afterwards, habit_counter_id):
+        self.habit_counter_id = habit_counter_id
+        super().__init__(as_felt_before, as_felt_afterwards)
+
 
 class WeekSchedule(TinBase):
     id = db.Column(db.Integer, primary_key=True)
