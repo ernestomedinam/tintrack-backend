@@ -387,11 +387,12 @@ class Task(Activity):
     def get_streak_up_to(self, datetime_object):
         """" returns times in a row a planned task was done from datetime_object to the past """
         planned_tasks = PlannedTask.query.filter(
-            PlannedTask.planned_datetime < datetime_object
-        ).order_by(PlannedTask.planned_datetime.desc()).all()
+            PlannedTask.planned_datetime <= datetime_object
+        ).filter_by(task_id=self.id).order_by(PlannedTask.planned_datetime.desc()).all()
         # check if task is done and add to streak
         streak = 0
         for planned_task in planned_tasks:
+            # print(f"{planned_task.task.name} {planned_task.planned_datetime} {planned_task.status}")
             if planned_task.status == PlannedTaskStatus.DONE:
                 streak += 1
             else:
@@ -402,10 +403,10 @@ class Task(Activity):
         """ returns average done/all from datetime_object to the past """
         done_planned_tasks = PlannedTask.query.filter(
             db.and_(
-                PlannedTask.planned_datetime < datetime_object,
+                PlannedTask.planned_datetime <= datetime_object,
                 PlannedTask.status == PlannedTaskStatus.DONE
             )
-        ).all()
+        ).filter_by(task_id=self.id).all()
         planned_tasks = PlannedTask.query.all()
         current_average = len(done_planned_tasks) / len(planned_tasks)
         return int(100 * current_average) 
@@ -685,8 +686,8 @@ class HabitCounter(TinBase):
     def serialize(self):
         """ return habit counter as dict required by front end client """
         status_and_kpi = self.get_kpi()
-        print(status_and_kpi)
-        print(f"this is status: {status_and_kpi['status']}")
+        # print(status_and_kpi)
+        # print(f"this is status: {status_and_kpi['status']}")
         return {
             "id": self.id,
             "toBeEnforced": self.habit.to_be_enforced,
@@ -849,12 +850,12 @@ class HabitCounter(TinBase):
         db.session.add(new_habit_introspective)
 
         # try to commit all changed to db
-        # try:
-        db.session.commit()
-        return True
-        #except:
-        #    print("something failed updating habit counter count or creating introspective...")
-        #    return False
+        try:
+            db.session.commit()
+            return True
+        except:
+            print("something failed updating habit counter count or creating introspective...")
+            return False
 
 
 class Introspective(TinBase):

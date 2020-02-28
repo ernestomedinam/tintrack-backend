@@ -863,25 +863,35 @@ def handle_habit_counters(habit_counter_id):
                 introspective["nextActivity"] = ""
             if set(("asFeltBefore", "asFeltAfterwards")).issubset(introspective):
                 if (
-                    int(introspective["asFeltBefore"]) > 0 and
-                    int(introspective["asFeltAfterwards"]) > 0
+                    type(introspective["asFeltBefore"]) == int and
+                    type(introspective["asFeltAfterwards"]) == int
                 ):
-                    success = habit_to_patch.record_occurrence(introspective)
-                    if success:
-                        status_code = 200
-                        response_body = {
-                            "result": "HTTP_200_OK. count updated, habit introspective recorded"
-                        }
+                    if (
+                        int(introspective["asFeltBefore"]) > 0 and
+                        int(introspective["asFeltAfterwards"]) > 0
+                    ):
+                        success = habit_to_patch.record_occurrence(introspective)
+                        if success:
+                            status_code = 200
+                            response_body = {
+                                "result": "HTTP_200_OK. count updated, habit introspective recorded"
+                            }
+                        else:
+                            status_code = 500
+                            response_body = {
+                                "result": "HTTP_500_INTERNAL_SERVER_ERROR. we seem to have spilled the soup!"
+                            }
                     else:
-                        status_code = 500
+                        # values are not valid
+                        status_code = 400
                         response_body = {
-                            "result": "HTTP_500_INTERNAL_SERVER_ERROR. we seem to have spilled the soup!"
+                            "result": "HTTP_400_BAD_REQUEST. we could not understand those feelings..."
                         }
                 else:
                     # values are not valid
                     status_code = 400
                     response_body = {
-                        "result": "HTTP_400_BAD_REQUEST. we could not understand those feelings..."
+                        "result": "HTTP_400_BAD_REQUEST. in spite of what you may think, feelings are numbers..."
                     }
             else:
                 # some key is missing
