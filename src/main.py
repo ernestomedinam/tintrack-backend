@@ -116,7 +116,7 @@ def handle_user_registration():
                     try:
                         db.session.commit()
                         status_code = 201
-                        result = f"{new_user.name} sucessfully registered, log in using {new_user.email}"
+                        result = f"HTTP_201_CREATED. {new_user.name} sucessfully registered, log in using {new_user.email}"
                         response_body = {
                             "result": result
                         }
@@ -194,7 +194,7 @@ def handle_user_login():
                             # refresh_token = create_refresh_token(requesting_user)
                             # add_token_to_database(refresh_token, app.config["JWT_IDENTITY_CLAIM"])
                             response_body = {
-                                "result": "HTTP_200_0K. user is verified, JWT cookies shoulda been sent..."
+                                "result": "HTTP_200_0K. user is verified, JWT cookies set on your browser"
                             }
                             status_code = 200
                             auth_response = make_response(
