@@ -202,7 +202,7 @@ Responses include task objects like this:
         "name": "Name for a task",
         "iconName": "default-task",
         "personalMessage" : "Task description and why user wants to have it as part of routine.",
-        "signature": "AB87DSLJ*SF?SFKS/SFDA"
+        "signature": "32&SLJ*SFTS56S/89FA"
         "weekSched": [
             {
                 "weekNumber": "1",
@@ -232,3 +232,140 @@ id | status code | response body
 
 Endpoint for an authenticated user to get his schedule for a specific date based on routine tasks and habits. Response includes a list of planned tasks and habit counter objects.
 
+id | url | methods | credentials | goal
+:---: | --- | :---: | :---: | ---
+16 | `/api/schedules/<requested_date>` | "GET" | `HttpOnly cookie` | get a dashboardDay object
+17 | `/api/schedules/<requested_date>/<UTC_offset>` | "GET" | `HttpOnly cookie` | get a dashboardDay object
+
+`<requested_date>` must be added to url with format yyyy-mm-dd, i.e.: `2020-02-26`
+`<UTC_offset>` represents hours of difference between requesting client local time and UTC time; it must be added to url as an integer that may be preceded by a minus sign (-), i.e.: `2020-02-26/-4`, if local is earlier than UTC. For `UTC_offset > 0` do not include any sign, i.e.: `2020-02-26/4`.
+
+This is a dashboardDay object, as included in response:
+
+    {
+        "year": "2020",
+        "month": "2", // february
+        "day": "26",
+        "dayName": "Wednesday",
+        "dayOrder": "3",
+        "weekNumber": "3",
+        "plannedTasks": [
+            {
+                "id": 5,
+                "startTime": "16:30",
+                "durationEstimate": "60",
+                "status": "done",
+                "name": "Name for a task",
+                "iconName": "default-task",
+                "personalMessage": "Task description and why user wants to have it as part of routine.",
+                "duration": "10",
+                "signature": "32&SLJ*SFTS56S/89FA",
+                "isAny": "False",
+                "kpiValues": [
+                    {
+                        "legend": "streak",
+                        "numbers" ["0", "2"]
+                    },
+                    {
+                        "legend": "longest",
+                        "numbers" ["0", "7"]
+                    },
+                    {
+                        "legend": "avg %",
+                        "numbers" ["5", "3"]
+                    }
+                ]
+            },
+            ...other planned tasks for requested date
+        ],
+        "habitCounters": [
+            {
+                "id": 5,
+                "toBeEnforced": "True",
+                "name": "Name for a habit",
+                "status": "under",
+                "iconName": "default-habit",
+                "personalMessage": "Habit's description and why user wants to quit or enforce it.",
+                "signature": "AB87DSLJ*SF?SFKS/SFDA",
+                "kpiValues": [
+                    {
+                        "legend": "today",
+                        "numbers": ["0", "6"]
+                    },
+                    {
+                        "legend": "lately",
+                        "numbers": ["1", "1"]
+                    },
+                    {
+                        "legend": "target",
+                        "numbers": ["1", "2"]
+                    }
+                ]
+            },
+            ...other habit counters for requested date
+        ]
+    }
+
+id | status code | response body
+:---: | :---: | ---
+16 | `200` | a dashboardDay object for `<requested_date>`
+17 | `200` | a dashboardDay object for `<requested_date>`
+
+### habit counters
+
+Endpoint to add and record an occurrence for a habit on a specific date (habit counter).
+
+id | url | methods | credentials | goal
+:---: | --- | :---: | :---: | ---
+18 | `/api/habit-counters/<habit_counter_id>` | "POST" | `HttpOnly cookie` `X-CSRF-TOKEN in header` | increase count for habit_counter by one and create habit introspective
+
+This POST request must send a body:
+
+    {
+        "asFeltBefore": "2", // scale: [1] sadder - [5] happier
+        "asFeltAfterwards": "5",
+        "previousActivity": "cooking", // optional key in request dictionary
+        "nextActivity": "sleeping" // optional key in request dictionary
+    }
+
+If all is well, response is:
+
+    {
+        "result": "HTTP_200_OK. count updated, habit introspective recorded"
+    },
+    200
+
+### planned tasks
+
+Endpoint to mark a planned task as done and record it's occurrence on a task introspective object.
+
+id | url | methods | credentials | goal
+:---: | --- | :---: | :---: | ---
+19 | `/api/planned_tasks/<planned_task_id>` | "POST" | `HttpOnly cookie` `X-CSRF-TOKEN in header` | mark task as done and create task introspective
+
+This POST request must send a body:
+
+    {
+        "asFeltBefore": "2", // scale: [1] sadder - [5] happier
+        "asFeltAfterwards": "5",
+        "previousActivity": "cooking", // optional key in request dictionary
+        "nextActivity": "sleeping" // optional key in request dictionary
+    }
+
+If all is well, response is:
+
+    {
+        "result": "HTTP_200_OK. task marked done successfully!"
+    },
+    200
+
+---
+
+## version control
+
+Current version is 1.0.1
+
+- version 1.0.0: first release
+- version 1.0.1: documentation added
+
+Plans being made for 2.0 release.
