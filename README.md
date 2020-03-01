@@ -363,9 +363,10 @@ If all is well, response is:
 
 ## version control
 
-Current version is 1.0.1
+Current version is 1.0.2
 
 - version 1.0.0: first release
 - version 1.0.1: documentation added
+- version 1.0.2: bug fixed for target value on habit counter
 
 Plans being made for 2.0 release.
