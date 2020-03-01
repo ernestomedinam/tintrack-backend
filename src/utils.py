@@ -123,13 +123,21 @@ def get_date_specs(datetime_object):
     }
 
 def list_value_to_digits(number):
-        """ return a list with value number as digits """
-        value_string = str(number)
-        digits_list = []
-        if len(value_string) == 1:
-            digits_list.append(0)
-        if len(value_string) > 2:
-            value_string = "99"
-        for digit in value_string:
-            digits_list.append(int(digit))
-        return digits_list
+    """ return a list with value number as digits """
+    value_string = str(number)
+    digits_list = []
+    if len(value_string) == 1:
+        digits_list.append(0)
+    if len(value_string) > 2:
+        value_string = "99"
+    for digit in value_string:
+        digits_list.append(int(digit))
+    return digits_list
+
+def proper_round(number, decimal=0):
+    number = str(number)[:str(number).index('.') + ( decimal + 2 )]
+    if number[-1] >= "5":
+        integer_part = number[:-2-(not decimal)]
+        decimal_part = int(number[-2-(not decimal)]) + 1
+        return float(integer_part) + decimal_part ** (-decimal + 1) if integer_part and decimal_part == 10 else float(integer_part + str(decimal_part))
+    return float(number[:-1])

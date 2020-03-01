@@ -10,7 +10,10 @@ import uuid
 from base64 import b64encode
 from dateutil.parser import parse
 from dateutil.relativedelta import relativedelta
-from utils import parse_tintrack_time_of_day, get_date_specs, list_value_to_digits
+from utils import (
+    parse_tintrack_time_of_day, get_date_specs, list_value_to_digits,
+    proper_round
+)
 
 db = SQLAlchemy()
 
@@ -794,7 +797,7 @@ class HabitCounter(TinBase):
             lambda counter: counter.date_for_count > self.date_for_count - days_lately,
             past_counters
         )
-        target_value = int(self.daily_target * times_target)
+        target_value = int(proper_round(self.daily_target * times_target))
 
         # count counters!
         current_value = 0
