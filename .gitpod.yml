@@ -7,7 +7,6 @@ ports:
       onOpen: ignore
 tasks:
     - init: >
-        pyenv install 3.6.15;
         cp .env.example .env;
         pipenv install;
         mysql -u root -e "CREATE DATABASE example";
