@@ -45,6 +45,7 @@ app.config["JWT_COOKIE_SECURE"] = False
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = 86400
 # needed for CSRF "protection"
 app.config["JWT_COOKIE_CSRF_PROTECT"] = True
+app.config["CORS_ORIGINS"] = ["*"]
 
 MIGRATE = Migrate(app, db)
 db.init_app(app)
