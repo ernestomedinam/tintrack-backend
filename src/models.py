@@ -66,7 +66,7 @@ class User(TinBase):
     date_of_birth = db.Column(db.Date, nullable=False)
     password_hash = db.Column(db.String(250), nullable=False, default="default")
     user_salt = db.Column(db.String(120), nullable=False)
-    ranking = db.Column(db.Enum(UserRanking), nullable=False, default="starter")
+    ranking = db.Column(db.Enum(UserRanking), nullable=False, default=UserRanking.STARTER)
     member_since = db.Column(db.DateTime, nullable=False, default="")
     tasks = db.relationship("Task", backref="user", cascade="all, delete-orphan", passive_deletes=True)
     habits = db.relationship("Habit", backref="user", cascade="all, delete-orphan", passive_deletes=True)

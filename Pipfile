@@ -13,18 +13,17 @@ flask-migrate = "*"
 flask-swagger = "*"
 psycopg2-binary = "*"
 python-dotenv = "*"
-mysql-connector-python = "*"
 flask-cors = "*"
 gunicorn = "*"
-mysqlclient = "*"
 pytz = "*"
 flask-jwt-extended = "*"
+python-dateutil = "*"
 
 [requires]
-python_version = "3.6"
+python_version = "3.11"
 
 [scripts]
-start="flask run -p 8000 -h 0.0.0.0"
+start="flask run -p 8000 -h 127.0.0.1"
 init="flask db init"
 migrate="flask db migrate"
 upgrade="flask db upgrade"

@@ -53,7 +53,7 @@ CORS(app, supports_credentials=True)
 jwt = JWTManager(app)
 
 # jwt configs
-@jwt.user_claims_loader
+@jwt.additional_claims_loader
 def add_claims_to_access_token(user):
     return {
         "name": user.name
@@ -63,12 +63,13 @@ def add_claims_to_access_token(user):
 def user_identity_lookup(user):
     return user.id
 
-@jwt.token_in_blacklist_loader
-def check_if_token_revoked(decoded_token):
+@jwt.token_in_blocklist_loader
+def check_if_token_revoked(jwt_header, decoded_token):
     return is_token_revoked(decoded_token)
 
-@jwt.user_loader_callback_loader
-def user_loader_callback(identity):
+@jwt.user_lookup_loader
+def user_loader_callback(jwt_header, jwt_payload):
+    identity = jwt_payload["sub"]
     user_from_id = User.query.filter_by(id=identity).first()
     if not user_from_id:
         return None
@@ -203,7 +204,8 @@ def handle_user_login():
                                 status_code,
                                 headers
                             )
-                            set_access_cookies(auth_response, access_token)
+                            auth_response.set_cookie("access_token_cookie", access_token)
+                            # set_access_cookies(auth_response, access_token)
                             return auth_response
                             
                         else:
@@ -263,7 +265,7 @@ def handle_user_logout():
 
 # user who am i? endpoint
 @app.route("/api/me", methods=["GET"])
-@jwt_required
+@jwt_required()
 def handle_me_query():
     """ tells user (with token and csrf cookies) related identity
         data and whether he may or not use those cookies to fetch
@@ -287,10 +289,9 @@ def handle_me_query():
     )
 
 # habits endpoint
-@app.route("/api/habits/", methods=["GET", "POST"])
-@app.route("/api/habits/<habit_id>", methods=["GET", "PUT", "DELETE"])
-@jwt_required
-def handle_habits(habit_id=None):
+@app.route("/api/habits", methods=["GET", "POST"])
+@jwt_required()
+def handle_habits():
     """ handle habits for an authenticated user """
     headers = {
         "Content-Type": "application/json"
@@ -299,19 +300,11 @@ def handle_habits(habit_id=None):
     auth_user = get_current_user()
     # check methods
     if request.method == "GET":
-        # check if habit_id is not none
-        if habit_id:
-            # return specific habit details
-            specific_habit = Habit.query.filter_by(id=habit_id).one_or_none()
-            response_body = specific_habit.serialize()
-            
-        else:
-            # return all user habits
-            user_habits = Habit.query.filter_by(user_id=auth_user.id).all()
-            response_body = []
-            for habit in user_habits:
-                response_body.append(habit.serialize())
-
+        # return all user habits
+        user_habits = Habit.query.filter_by(user_id=auth_user.id).all()
+        response_body = []
+        for habit in user_habits:
+            response_body.append(habit.serialize())
         status_code = 200
 
     elif request.method == "POST":
@@ -364,6 +357,29 @@ def handle_habits(habit_id=None):
             response_body = {
                 "result": "HTTP_400_BAD_REQUEST. some key is missing in request..."
             }
+
+    return make_response (
+        json.dumps(response_body),
+        status_code,
+        headers
+    )
+
+@app.route("/api/habits/<habit_id>", methods=["GET", "PUT", "DELETE"])
+@jwt_required()
+def handle_habit(habit_id):
+    """ handle habit for an authenticated user """
+    headers = {
+        "Content-Type": "application/json"
+    }
+    # grab user
+    auth_user = get_current_user()
+    # check methods
+    if request.method == "GET":
+        # return specific habit details
+        specific_habit = Habit.query.filter_by(id=habit_id).one_or_none()
+        response_body = specific_habit.serialize()
+
+        status_code = 200
 
     elif request.method == "PUT":
         # only allowed if habit_id is not None
@@ -446,7 +462,7 @@ def handle_habits(habit_id=None):
 # tasks endpoint
 @app.route("/api/tasks/", methods=["GET", "POST"])
 @app.route("/api/tasks/<task_id>", methods=["GET", "PUT", "DELETE"])
-@jwt_required
+@jwt_required()
 def handle_tasks(task_id=None):
     """ handle tasks for an authenticated user """
     headers = {
@@ -615,7 +631,7 @@ def handle_tasks(task_id=None):
 # schedules endpoint
 @app.route("/api/schedules/<requested_date>", methods=["GET"])
 @app.route("/api/schedules/<requested_date>/<hours_offset>", methods=["GET"])
-@jwt_required
+@jwt_required()
 def handle_schedule_for(requested_date, hours_offset=0):
     """ will do and return according to date:
         - if date is today: checks if today's and tomorrow's schedule 
@@ -844,7 +860,7 @@ def handle_schedule_for(requested_date, hours_offset=0):
 # habitCounters endpoint
 # @app.route("/api/habit-counters/", methods=["GET"])
 @app.route("/api/habit-counters/<habit_counter_id>", methods=["POST"])
-@jwt_required
+@jwt_required()
 def handle_habit_counters(habit_counter_id):
     """ 
         allows for an authenticated user to patch a habit counter 
@@ -918,7 +934,7 @@ def handle_habit_counters(habit_counter_id):
 # planned tasks endpoint
 # @app.route("/api/planned-tasks/", method=["GET"])
 @app.route("/api/planned-tasks/<planned_task_id>", methods=["POST"])
-@jwt_required
+@jwt_required()
 def handle_planned_tasks(planned_task_id):
     """
         POST method used to mark task as done and create
